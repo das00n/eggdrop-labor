@@ -1418,11 +1418,19 @@
       document.getElementById('time-modal').classList.remove('show');
       TM_CTX = null;
     }
+    // 출근 입력 시 직급별 퇴근 자동(시:분, 근무폭=출근+이 시간). Pro 9h / AM 10h / SM·SV 11h. Crew 없음.
+    const GRADE_OUT_HOURS = { SV: 11, SM: 11, AM: 10, Pro: 9 };
     function confirmTimeModal() {
       if (!TM_CTX) return;
       STATE.entries[TM_CTX.empId][TM_CTX.field] = TM_CTX.current;
-      // 근무시간 바뀌면 휴게 구간 동기화(근무 밖이면 자동 구간으로)
       const ent = STATE.entries[TM_CTX.empId];
+      // 출근(in) 입력 → 직급별 퇴근 자동(이후 퇴근 수동 조정 가능)
+      if (TM_CTX.field === 'in' && ent.in) {
+        const emp = STATE.employees.find(e => e.id === TM_CTX.empId) || STATE.newEmployees.find(e => e.id === TM_CTX.empId);
+        const gh = GRADE_OUT_HOURS[emp && emp.grade];
+        if (gh) ent.out = minToTime(timeToMin(ent.in) + gh * 60);
+      }
+      // 근무시간 바뀌면 휴게 구간 동기화(근무 밖이면 자동 구간으로)
       if (ent.in && ent.out) syncBreak(ent);
       refreshRow(TM_CTX.empId);
       closeTimeModal();
