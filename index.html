@@ -1,0 +1,1653 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>스케줄 입력</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
+  <style>
+    /* ───────── Telegram 테마 변수 (다크/라이트 자동) ───────── */
+    :root {
+      --bg: var(--tg-theme-bg-color, #ffffff);
+      --text: var(--tg-theme-text-color, #000000);
+      --hint: var(--tg-theme-hint-color, #707579);
+      --link: var(--tg-theme-link-color, #007aff);
+      --btn: var(--tg-theme-button-color, #007aff);
+      --btn-text: var(--tg-theme-button-text-color, #ffffff);
+      --secondary-bg: var(--tg-theme-secondary-bg-color, #f1f1f4);
+      --section-bg: var(--tg-theme-section-bg-color, #ffffff);
+      --header-bg: var(--tg-theme-header-bg-color, #f7f7f7);
+      --accent: var(--tg-theme-accent-text-color, #007aff);
+      --section-header: var(--tg-theme-section-header-text-color, #6d6d72);
+      --subtitle: var(--tg-theme-subtitle-text-color, #707579);
+      --destructive: var(--tg-theme-destructive-text-color, #ff3b30);
+
+      --grade-am: #34c759;
+      --grade-sm: #007aff;
+      --grade-sv: #af52de;
+      --grade-pro: #5856d6;
+      --grade-crew: #ff9500;
+
+      --radius: 12px;
+      --gap: 8px;
+      --touch: 44px;
+    }
+
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body {
+      margin: 0; padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Pretendard", "Apple SD Gothic Neo", sans-serif;
+      font-size: 15px;
+      background: var(--secondary-bg);
+      color: var(--text);
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+      padding-bottom: 100px;
+    }
+
+    /* ───────── Header ───────── */
+    header {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      background: var(--header-bg);
+      padding: 12px 16px;
+      border-bottom: 1px solid rgba(0,0,0,0.1);
+      box-shadow: 0 1px 6px rgba(0,0,0,0.08);
+    }
+    /* main이 fixed 헤더 아래에서 시작하도록 — 높이는 JS가 동적 설정 */
+    #main { padding-top: 72px; }
+    .h-title { font-size: 17px; font-weight: 600; margin: 0; }
+    .h-sub   { font-size: 13px; color: var(--hint); margin-top: 2px; }
+
+    /* ───────── Section ───────── */
+    .section { padding: 16px 16px 4px; }
+    .section-title {
+      font-size: 13px; font-weight: 600;
+      color: var(--section-header); text-transform: uppercase;
+      letter-spacing: 0.5px; padding: 0 4px 8px;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .section-count { font-weight: 400; color: var(--hint); text-transform: none; }
+
+    /* ───────── Employee Card ───────── */
+    .emp-list { background: var(--section-bg); border-radius: var(--radius); overflow: hidden; }
+    .emp-row {
+      padding: 12px 16px; border-bottom: 1px solid rgba(0,0,0,0.06);
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .emp-row:last-child { border-bottom: none; }
+    .emp-row.off { opacity: 0.5; }
+    .emp-row.incomplete {
+      background: rgba(255,59,48,0.06);
+      border-left: 3px solid var(--destructive);
+    }
+    .emp-row.deleting { opacity: 0.4; text-decoration: line-through; background: rgba(0,0,0,0.04); }
+    .work-hours.warn { color: var(--destructive); font-weight: 700; }
+
+    /* 행 단위 삭제 버튼 */
+    .row-delete {
+      width: 28px; height: 28px; border-radius: 14px;
+      background: rgba(255,59,48,0.12); color: var(--destructive);
+      font-size: 14px; font-weight: 700; cursor: pointer;
+      border: none; padding: 0;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .row-delete:active { background: rgba(255,59,48,0.25); }
+    .row-delete.undo { background: rgba(0,0,0,0.08); color: var(--text); font-size: 11px; }
+
+    /* Crew 행의 개인 시급 chip */
+    .crew-rate-chip {
+      padding: 4px 8px; border-radius: 6px;
+      background: rgba(255,149,0,0.15); color: #b35a00;
+      font-size: 11px; font-weight: 600; cursor: pointer;
+      font-variant-numeric: tabular-nums;
+      margin-left: 6px;
+    }
+    .crew-rate-chip:active { background: rgba(255,149,0,0.35); }
+
+    .emp-name-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    }
+    .emp-name { font-weight: 600; font-size: 15px; }
+    .emp-grade {
+      display: inline-block; padding: 2px 8px; border-radius: 10px;
+      font-size: 11px; font-weight: 600; color: white; margin-left: 6px;
+    }
+    .emp-grade.AM   { background: var(--grade-am); }
+    .emp-grade.SM   { background: var(--grade-sm); }
+    .emp-grade.SV   { background: var(--grade-sv); }
+    .emp-grade.Pro  { background: var(--grade-pro); }
+    .emp-grade.Crew { background: var(--grade-crew); }
+
+    /* 토글 */
+    .toggle {
+      width: 51px; height: 31px; border-radius: 16px;
+      background: #ccc; position: relative; transition: background 0.2s;
+      flex-shrink: 0;
+    }
+    .toggle::after {
+      content: ''; position: absolute; top: 2px; left: 2px;
+      width: 27px; height: 27px; border-radius: 50%;
+      background: white; transition: left 0.2s;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+    .toggle.on { background: #34c759; }
+    .toggle.on::after { left: 22px; }
+
+    /* 시간 chip 행 */
+    .emp-time-row {
+      display: grid; grid-template-columns: 1fr 1fr auto auto;
+      gap: 8px; align-items: center;
+    }
+    .time-chip, .break-chip {
+      padding: 8px 10px; border-radius: 8px;
+      background: var(--secondary-bg); color: var(--text);
+      font-size: 14px; font-weight: 500; font-variant-numeric: tabular-nums;
+      text-align: center; min-height: var(--touch);
+      display: flex; align-items: center; justify-content: center; gap: 4px;
+      cursor: pointer; user-select: none;
+      border: 1px solid transparent;
+    }
+    .time-chip:active, .break-chip:active { background: rgba(0,0,0,0.08); }
+    .time-chip .label { font-size: 11px; color: var(--hint); margin-right: 2px; }
+    .time-chip .empty { color: var(--hint); font-weight: 400; }
+
+    .break-chip { background: rgba(255,149,0,0.15); color: #ff9500; }
+    .work-hours {
+      padding: 8px 10px; font-size: 14px; font-weight: 600;
+      color: var(--accent); white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* "휴무" 표시 */
+    .off-label {
+      grid-column: 1 / 4;
+      padding: 8px 10px; text-align: center;
+      color: var(--hint); font-size: 13px;
+      background: var(--secondary-bg); border-radius: 8px;
+    }
+
+    /* ───────── Add Employee Button ───────── */
+    .add-btn {
+      margin: 12px 16px; padding: 14px; border-radius: var(--radius);
+      background: var(--section-bg); border: 1px dashed var(--hint);
+      color: var(--accent); font-size: 15px; font-weight: 500;
+      text-align: center; cursor: pointer;
+      min-height: var(--touch);
+    }
+    .add-btn:active { background: rgba(0,0,0,0.05); }
+
+    /* 직원 추가 영역 — 지원 섹션과 명확히 구분 (상단 구분선 + 라벨) */
+    .add-employee-section {
+      margin-top: 20px;
+      border-top: 6px solid var(--secondary-bg);
+      padding-top: 12px;
+    }
+    .add-employee-label {
+      font-size: 13px; font-weight: 600; color: var(--section-header);
+      text-transform: uppercase; letter-spacing: 0.5px;
+      padding: 0 20px 4px;
+    }
+    .add-employee-btn {
+      border-style: solid; border-color: var(--accent);
+      color: var(--accent); font-weight: 600;
+    }
+
+    /* ───────── Footer (sticky) ───────── */
+    footer {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      background: var(--header-bg); border-top: 1px solid rgba(0,0,0,0.1);
+      padding: 12px 16px env(safe-area-inset-bottom);
+      z-index: 20;
+    }
+    .summary-row {
+      display: flex; justify-content: space-between;
+      font-size: 13px; color: var(--subtitle); margin-bottom: 4px;
+    }
+    .summary-amount {
+      font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 8px;
+    }
+    .save-btn {
+      width: 100%; padding: 14px; border: none; border-radius: 10px;
+      background: var(--btn); color: var(--btn-text);
+      font-size: 16px; font-weight: 600; cursor: pointer;
+      min-height: 48px;
+    }
+    .save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .save-btn:active:not(:disabled) { opacity: 0.85; }
+
+    /* ───────── Modal ───────── */
+    .modal-backdrop {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+      z-index: 30; display: none; align-items: flex-end;
+    }
+    .modal-backdrop.show { display: flex; }
+    .modal {
+      width: 100%; background: var(--section-bg);
+      border-radius: 16px 16px 0 0; padding: 20px 16px env(safe-area-inset-bottom);
+      animation: slide-up 0.25s ease-out;
+      max-height: 90vh; overflow-y: auto;
+    }
+    @keyframes slide-up {
+      from { transform: translateY(100%); }
+      to   { transform: translateY(0); }
+    }
+    .modal-title {
+      font-size: 17px; font-weight: 600; margin: 0 0 4px;
+    }
+    .modal-sub {
+      font-size: 13px; color: var(--hint); margin-bottom: 16px;
+    }
+    .modal-section-title {
+      font-size: 12px; font-weight: 600; color: var(--section-header);
+      text-transform: uppercase; letter-spacing: 0.5px;
+      margin: 16px 0 8px;
+    }
+    .modal-actions {
+      display: flex; gap: 8px; margin-top: 20px;
+    }
+    .modal-btn {
+      flex: 1; padding: 12px; border: none; border-radius: 10px;
+      font-size: 15px; font-weight: 600; cursor: pointer; min-height: 44px;
+    }
+    .modal-btn.primary { background: var(--btn); color: var(--btn-text); }
+    .modal-btn.secondary { background: var(--secondary-bg); color: var(--text); }
+    .modal-btn.destructive { background: rgba(255,59,48,0.15); color: var(--destructive); }
+
+    /* Quick chips */
+    .quick-chips {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+    }
+    .quick-chip {
+      padding: 12px 8px; border-radius: 10px;
+      background: var(--secondary-bg); color: var(--text);
+      font-size: 14px; font-weight: 500; text-align: center;
+      cursor: pointer; user-select: none; min-height: 44px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .quick-chip:active, .quick-chip.selected { background: var(--btn); color: var(--btn-text); }
+
+    /* Time picker (시:분 select) */
+    .time-picker {
+      display: flex; gap: 12px; justify-content: center; align-items: center;
+      padding: 12px 0;
+    }
+    .time-select {
+      padding: 12px 16px; border-radius: 10px;
+      background: var(--secondary-bg); border: none; color: var(--text);
+      font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums;
+      text-align: center; min-width: 80px; min-height: 48px;
+      appearance: none;
+    }
+    .time-sep { font-size: 24px; font-weight: 700; color: var(--hint); }
+    .break-none { text-align: center; color: var(--hint); font-size: 14px; padding: 8px; margin-top: 4px; text-decoration: underline; }
+
+    /* Form input */
+    .form-input {
+      width: 100%; padding: 12px; border-radius: 10px;
+      background: var(--secondary-bg); border: 1px solid transparent;
+      color: var(--text); font-size: 16px;
+      min-height: 44px; box-sizing: border-box;
+    }
+    .form-input:focus { outline: none; border-color: var(--btn); }
+
+    .grade-picker {
+      display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px;
+    }
+    .grade-chip {
+      padding: 10px 4px; border-radius: 8px;
+      background: var(--secondary-bg); color: var(--text);
+      font-size: 13px; font-weight: 600; text-align: center;
+      cursor: pointer; user-select: none; min-height: 44px;
+      display: flex; align-items: center; justify-content: center;
+      border: 2px solid transparent;
+    }
+    .grade-chip.selected { background: var(--btn); color: var(--btn-text); border-color: var(--btn); }
+
+    /* ───────── Crew 시급 입력 섹션 ───────── */
+    .rate-section {
+      margin: 12px 16px 4px;
+      padding: 14px 16px;
+      border-radius: var(--radius);
+      background: var(--section-bg);
+    }
+    .rate-title {
+      font-size: 12px; font-weight: 600;
+      color: var(--section-header); text-transform: uppercase;
+      letter-spacing: 0.5px; margin-bottom: 10px;
+    }
+    .rate-row {
+      display: grid; grid-template-columns: 1fr 1fr 1.2fr; gap: 8px;
+    }
+    .rate-chip {
+      padding: 12px 4px; border-radius: 10px;
+      background: var(--secondary-bg); color: var(--text);
+      font-size: 14px; font-weight: 600; text-align: center;
+      cursor: pointer; user-select: none; min-height: 44px;
+      display: flex; align-items: center; justify-content: center;
+      border: 2px solid transparent;
+      font-variant-numeric: tabular-nums;
+    }
+    .rate-chip.selected { background: var(--btn); color: var(--btn-text); border-color: var(--btn); }
+    .rate-input {
+      padding: 12px 8px; border-radius: 10px;
+      background: var(--secondary-bg); border: 2px solid transparent;
+      color: var(--text); font-size: 14px; font-weight: 600;
+      min-height: 44px; text-align: center;
+      font-variant-numeric: tabular-nums; appearance: textfield;
+    }
+    .rate-input:focus { outline: none; border-color: var(--btn); background: var(--section-bg); }
+    .rate-input::-webkit-outer-spin-button,
+    .rate-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    .rate-input.active { border-color: var(--btn); }
+
+    /* ───────── 직원 관리 modal ───────── */
+    .manage-list { margin: 0 0 16px; border-radius: 10px; overflow: hidden; background: var(--secondary-bg); }
+    .manage-row {
+      padding: 10px 14px; display: flex; align-items: center; justify-content: space-between;
+      border-bottom: 1px solid rgba(0,0,0,0.06);
+    }
+    .manage-row:last-child { border-bottom: none; }
+    .manage-row.deleting { opacity: 0.4; text-decoration: line-through; }
+    .manage-name { font-size: 14px; font-weight: 500; }
+    .manage-del-btn {
+      padding: 6px 10px; border-radius: 8px;
+      background: rgba(255,59,48,0.12); color: var(--destructive);
+      font-size: 12px; font-weight: 600; cursor: pointer;
+      border: none;
+    }
+    .manage-undo-btn {
+      padding: 6px 10px; border-radius: 8px;
+      background: rgba(0,0,0,0.05); color: var(--text);
+      font-size: 12px; font-weight: 600; cursor: pointer;
+      border: none;
+    }
+
+    /* ───────── 지원 섹션 ───────── */
+    .support-row {
+      padding: 10px 14px; display: flex; align-items: center; gap: 8px;
+      border-bottom: 1px solid rgba(0,0,0,0.06);
+      flex-wrap: wrap;
+    }
+    .support-row:last-child { border-bottom: none; }
+    .support-row.dir-in    { background: rgba(52,199,89,0.06); }
+    .support-row.dir-out   { background: rgba(255,59,48,0.06); }
+    .support-tag {
+      padding: 4px 8px; border-radius: 6px;
+      font-size: 11px; font-weight: 700; color: white;
+    }
+    .support-tag.in    { background: var(--grade-am); }
+    .support-tag.out   { background: var(--destructive); }
+    .support-info { flex: 1; font-size: 13px; }
+    .support-info .name { font-weight: 600; }
+    .support-info .meta { color: var(--hint); font-size: 12px; }
+    .support-delete {
+      padding: 4px 8px; border-radius: 6px; background: rgba(0,0,0,0.08);
+      color: var(--text); font-size: 11px; font-weight: 600; border: none; cursor: pointer;
+    }
+
+    /* 지원 모달 */
+    .sup-dir-pick {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;
+    }
+    .sup-dir-chip {
+      padding: 12px; border-radius: 10px; background: var(--secondary-bg);
+      font-size: 14px; font-weight: 600; text-align: center; cursor: pointer;
+      min-height: 44px; display: flex; align-items: center; justify-content: center;
+      border: 2px solid transparent;
+    }
+    .sup-dir-chip.selected.in  { background: var(--grade-am); color: white; border-color: var(--grade-am); }
+    .sup-dir-chip.selected.out { background: var(--destructive); color: white; border-color: var(--destructive); }
+
+    .sup-scope-pick {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;
+    }
+    .sup-scope-chip {
+      padding: 12px; border-radius: 10px; background: var(--secondary-bg);
+      font-size: 14px; font-weight: 600; text-align: center; cursor: pointer; min-height: 44px;
+      display: flex; align-items: center; justify-content: center;
+      border: 2px solid transparent;
+    }
+    .sup-scope-chip.selected { background: var(--btn); color: var(--btn-text); border-color: var(--btn); }
+
+    .sup-name-suggest {
+      max-height: 180px; overflow-y: auto;
+      background: var(--secondary-bg); border-radius: 10px; margin-top: 4px;
+    }
+    .sup-name-suggest .item {
+      padding: 8px 12px; cursor: pointer; font-size: 14px;
+      border-bottom: 1px solid rgba(0,0,0,0.05);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .sup-name-suggest .item:last-child { border-bottom: none; }
+    .sup-name-suggest .item:active { background: rgba(0,0,0,0.05); }
+    .sup-name-suggest .item .gr { font-size: 11px; padding: 2px 6px; border-radius: 8px; color: white; }
+
+    /* 날짜 picker */
+    .date-grid {
+      display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px;
+    }
+    .date-cell {
+      padding: 10px 4px; border-radius: 8px; background: var(--secondary-bg);
+      text-align: center; font-size: 13px; font-weight: 500; cursor: pointer;
+      min-height: 40px; display: flex; align-items: center; justify-content: center;
+    }
+    .date-cell.dow { font-size: 10px; color: var(--hint); background: transparent; cursor: default; font-weight: 700; }
+    .date-cell.selected { background: var(--btn); color: var(--btn-text); }
+    .date-cell.today { border: 2px solid var(--btn); }
+    .date-cell.empty { background: transparent; cursor: default; }
+
+    .header-date {
+      cursor: pointer; display: inline-block;
+      padding: 2px 8px; border-radius: 6px; background: rgba(0,122,255,0.12);
+      color: var(--accent); font-size: 13px; font-weight: 600;
+      margin-top: 4px;
+    }
+
+    /* ───────── Loading / Empty ───────── */
+    .loading {
+      padding: 40px; text-align: center; color: var(--hint);
+    }
+    .err-banner {
+      margin: 12px 16px; padding: 12px; border-radius: 10px;
+      background: rgba(255,59,48,0.15); color: var(--destructive);
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1 class="h-title" id="hdr-store">매장 로딩 중…</h1>
+    <p class="h-sub" id="hdr-sub">⏳</p>
+  </header>
+
+  <div id="err-banner" class="err-banner" style="display:none"></div>
+
+  <main id="main">
+    <div class="loading" id="loading">⏳ 직원 정보 불러오는 중...</div>
+  </main>
+
+  <footer>
+    <div class="summary-amount" id="sum-amount">0명 · 0h 근무</div>
+    <button class="save-btn" id="save-btn" onclick="onSave()" disabled>💾 저장</button>
+  </footer>
+
+  <!-- ───────── Time Picker Modal (출/퇴근) ───────── -->
+  <div class="modal-backdrop" id="time-modal">
+    <div class="modal">
+      <h2 class="modal-title" id="tm-title">출근 시각</h2>
+      <p class="modal-sub" id="tm-sub"></p>
+
+      <div class="modal-section-title">자주 쓰는 시간</div>
+      <div class="quick-chips" id="tm-chips"></div>
+
+      <div class="modal-section-title">직접 선택</div>
+      <div class="time-picker">
+        <select class="time-select" id="tm-hour"></select>
+        <span class="time-sep">:</span>
+        <select class="time-select" id="tm-min"></select>
+      </div>
+
+      <div class="modal-actions">
+        <button class="modal-btn secondary" onclick="closeTimeModal()">취소</button>
+        <button class="modal-btn primary" onclick="confirmTimeModal()">확인</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ───────── Break Picker Modal (휴식) ───────── -->
+  <div class="modal-backdrop" id="break-modal">
+    <div class="modal">
+      <h2 class="modal-title" id="bm-title">휴게 시간</h2>
+      <p class="modal-sub" id="bm-sub"></p>
+
+      <div class="modal-section-title">휴게 시작 · 종료</div>
+      <div class="quick-chips" id="bm-chips"></div>
+
+      <div class="modal-actions">
+        <button class="modal-btn secondary" onclick="closeBreakModal()">취소</button>
+        <button class="modal-btn primary" onclick="confirmBreakModal()">적용</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ───────── Crew 시급 편집 mini-modal ───────── -->
+  <div class="modal-backdrop" id="crew-rate-modal">
+    <div class="modal">
+      <h2 class="modal-title" id="crm-title">💵 시급 설정</h2>
+      <p class="modal-sub" id="crm-sub">개인별 base 시급 (보험·퇴직금 별도)</p>
+
+      <div class="modal-section-title">자주 쓰는 값</div>
+      <div class="rate-row">
+        <div class="rate-chip" data-rate="12500" onclick="crmSet(12500)">12,500</div>
+        <div class="rate-chip" data-rate="13000" onclick="crmSet(13000)">13,000</div>
+        <input class="rate-input" type="number" inputmode="numeric"
+               id="crm-input" placeholder="직접 입력"
+               oninput="crmInput(this.value)">
+      </div>
+
+      <div class="modal-actions">
+        <button class="modal-btn secondary" onclick="closeCrewRateModal()">취소</button>
+        <button class="modal-btn primary" onclick="confirmCrewRate()">저장</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ───────── 지원 추가/편집 Modal ───────── -->
+  <div class="modal-backdrop" id="support-modal">
+    <div class="modal">
+      <h2 class="modal-title">🔄 지원 입력</h2>
+      <p class="modal-sub">타매장에서 우리 매장에 온 / 우리 매장에서 타매장으로 간 직원</p>
+
+      <div class="modal-section-title">방향</div>
+      <div class="sup-dir-pick">
+        <div class="sup-dir-chip in"  data-dir="in"  onclick="supSetDir('in')">⬅ 우리 매장에 옴</div>
+        <div class="sup-dir-chip out" data-dir="out" onclick="supSetDir('out')">➡ 타매장에 감</div>
+      </div>
+
+      <div class="modal-section-title" id="sup-store-label">출처 매장</div>
+      <select class="form-input" id="sup-store" onchange="supOnStoreChange()">
+        <option value="">매장 선택</option>
+      </select>
+
+      <div class="modal-section-title">직원 이름</div>
+      <input class="form-input" id="sup-name" type="text" placeholder="이름 입력" autocomplete="off" oninput="supOnNameInput()">
+      <div class="sup-name-suggest" id="sup-suggest" style="display:none"></div>
+
+      <div class="modal-section-title">직급</div>
+      <div class="grade-picker" id="sup-grades"></div>
+
+      <div class="modal-section-title" id="sup-scope-label">근무 시간</div>
+      <div class="sup-scope-pick" id="sup-scope-area">
+        <!-- 정직원: 종일/반일 chip — Crew: 시간 input -->
+      </div>
+      <p class="modal-sub" id="sup-info" style="margin-top:6px"></p>
+
+      <div class="modal-actions">
+        <button class="modal-btn secondary" onclick="closeSupportModal()">취소</button>
+        <button class="modal-btn primary" onclick="confirmSupport()">추가</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ───────── 날짜 변경 Modal ───────── -->
+  <div class="modal-backdrop" id="date-modal">
+    <div class="modal">
+      <h2 class="modal-title" id="date-modal-title">📅 날짜 선택</h2>
+      <p class="modal-sub">해당 월의 다른 날짜를 선택할 수 있습니다 (과거/미래 모두 가능)</p>
+
+      <div class="date-grid" id="date-grid"></div>
+
+      <div class="modal-actions">
+        <button class="modal-btn secondary" onclick="closeDateModal()">취소</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ───────── 직원 추가 Modal (신규 추가 전용) ───────── -->
+  <div class="modal-backdrop" id="add-modal">
+    <div class="modal">
+      <h2 class="modal-title">➕ 새 직원 추가</h2>
+      <p class="modal-sub">저장 시 본사 시트에 등록됩니다 (삭제는 메인 화면 ✕ 버튼)</p>
+
+      <div class="modal-section-title">이름</div>
+      <input class="form-input" id="add-name" type="text" placeholder="이름을 입력해주세요" autocomplete="off">
+
+      <div class="modal-section-title">직급</div>
+      <div class="grade-picker" id="add-grades"></div>
+      <p class="modal-sub" id="add-grade-info" style="margin-top:8px"></p>
+
+      <div id="add-crew-rate-area" style="display:none">
+        <div class="modal-section-title">💵 Crew 시급 (base — 보험·퇴직금 별도)</div>
+        <div class="rate-row">
+          <div class="rate-chip" data-rate="12500" onclick="addSetCrewRate(12500)">12,500</div>
+          <div class="rate-chip selected" data-rate="13000" onclick="addSetCrewRate(13000)">13,000</div>
+          <input class="rate-input" type="number" inputmode="numeric"
+                 id="add-crew-rate" placeholder="직접" oninput="addCrewRateInput(this.value)">
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="modal-btn secondary" onclick="closeAddModal()">취소</button>
+        <button class="modal-btn primary" onclick="confirmAddEmployee()">추가</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ───────── Telegram WebApp 초기화 ─────────
+    const tg = window.Telegram?.WebApp;
+    if (tg) {
+      tg.ready();
+      tg.expand();
+      tg.MainButton.hide();  // 자체 footer 버튼 사용
+    }
+
+    // ───────── State ─────────
+    const STATE = {
+      store: '',
+      date: '',                  // YYYY-MM-DD
+      manager: '',
+      employees: [],             // [{id, name, grade, rate, base_rate, prev}]
+      entries: {},               // employee_id → {in, out, break, on}
+      newEmployees: [],          // [{tempId, name, grade, base_rate (Crew만)}]
+      deletedEmployees: [],      // [empId] — 삭제 처리 대기 (저장 시 봇에 전달)
+      crewRateChanges: {},       // {empId: new_base_rate} — Crew 개인 시급 변경분
+      rates: { SV: 20000, SM: 15000, AM: 12000, Pro: 11000, Crew: 10000 },  // 직급별 기본 시급
+      support_daily_hours: { SV: 10.4, SM: 10, AM: 9, Pro: 8, Crew: 8 },
+      all_stores: {},            // {매장명: [{n, g, i}]} — 지원 자동완성용
+      supportEntries: [],        // [{direction: 'in'|'out', other_store, name, grade, hours, mode}]
+    };
+
+    // 출/퇴근 picker 임시 상태
+    let TM_CTX = null;   // {empId, field: 'in'|'out', initial: 'HH:MM'}
+    // 휴식 picker 임시 상태
+    let BM_CTX = null;   // {empId, initial: hours, autoValue}
+    // 직원 추가 modal 임시 상태
+    let AM_CTX = null;   // {name, grade, rate}
+
+    // ───────── initData parse ─────────
+    function parseInitData() {
+      // 봇이 미니앱 URL에 ?gz= (gzip+urlsafe_base64) 또는 ?d= (urlsafe_base64) 인코딩
+      const params = new URLSearchParams(window.location.search);
+      const gz = params.get('gz');
+      const d = params.get('d');
+      const param = gz || d;
+      const isGzip = !!gz;
+      if (param) {
+        try {
+          let std = param.replace(/-/g, '+').replace(/_/g, '/');
+          while (std.length % 4) std += '=';
+          const binary = atob(std);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          let jsonText;
+          if (isGzip) {
+            if (typeof pako === 'undefined') {
+              throw new Error('pako 라이브러리 로드 실패 (네트워크 확인)');
+            }
+            jsonText = pako.ungzip(bytes, {to: 'string'});
+          } else {
+            jsonText = new TextDecoder('utf-8').decode(bytes);
+          }
+          const decoded = JSON.parse(jsonText);
+          Object.assign(STATE, decoded);
+          return true;
+        } catch (e) {
+          showError('데이터 파싱 실패: ' + e.message);
+          console.error('parse error:', e, 'raw=', param?.substring(0, 100));
+          return false;
+        }
+      }
+      // 개발 모드: 더미 데이터
+      if (window.location.hostname === 'localhost' || window.location.hostname === '' || window.location.search.includes('dev')) {
+        loadDummyData();
+        return true;
+      }
+      showError('미니앱 데이터 없음 — 봇에서 다시 진입해주세요');
+      return false;
+    }
+
+    function loadDummyData() {
+      STATE.store = '역삼GS점';
+      STATE.date = new Date().toISOString().split('T')[0];
+      STATE.manager = '김매니저';
+      STATE.employees = [
+        { id: 'EMP001', name: '김은솔', grade: 'AM',   rate: 12000, prev: {in:'09:00', out:'18:00', breakH:1.0} },
+        { id: 'EMP002', name: '유연상', grade: 'AM',   rate: 12000, prev: {in:'06:30', out:'16:30', breakH:1.0} },
+        { id: 'EMP003', name: '김영현', grade: 'Pro',  rate: 11000, prev: {in:'08:00', out:'17:00', breakH:1.0} },
+        { id: 'EMP004', name: '이승윤', grade: 'Pro',  rate: 11000, prev: {in:'13:00', out:'22:00', breakH:1.0} },
+        { id: 'EMP005', name: '김진우', grade: 'Crew', rate: 10000, prev: null },
+        { id: 'EMP006', name: '김영우', grade: 'Crew', rate: 10000, prev: {in:'13:00', out:'21:00', breakH:0.5} },
+        { id: 'EMP007', name: '이승민', grade: 'Crew', rate: 10000, prev: {in:'17:00', out:'24:00', breakH:0.5} },
+        { id: 'EMP008', name: '오지승', grade: 'Crew', rate: 10000, prev: null },
+      ];
+    }
+
+    // ───────── 시간 계산 헬퍼 ─────────
+    function timeToHours(t) {
+      if (!t) return null;
+      const [h, m] = t.split(':').map(Number);
+      return h + m / 60;
+    }
+    function autoBreak(workH) {
+      // 2026-06-13: 8h↑ -1h, 4h↑ -0.5h, 그 외 0
+      if (workH >= 8) return 1.0;
+      if (workH >= 4) return 0.5;
+      return 0;
+    }
+    function calcWork(inT, outT, breakH) {
+      const a = timeToHours(inT), b = timeToHours(outT);
+      if (a == null || b == null) return 0;
+      const span = (b >= a ? b - a : b + 24 - a);  // 자정 넘어 perished case
+      return Math.max(0, span - (breakH || 0));
+    }
+    // ── 휴게 시간 구간 헬퍼 (분 단위) ──
+    function timeToMin(t) { if (!t) return null; const [h, m] = t.split(':').map(Number); return h * 60 + m; }
+    function minToTime(x) { x = ((x % 1440) + 1440) % 1440; return String((x / 60) | 0).padStart(2, '0') + ':' + String(x % 60).padStart(2, '0'); }
+    function breakDurH(ent) {  // 휴게 구간 → 길이(h). 구간 없으면 0.
+      const s = timeToMin(ent.break_start), e = timeToMin(ent.break_end);
+      if (s == null || e == null || e <= s) return 0;
+      return (e - s) / 60;
+    }
+    // 근무구간 [in,out] 안에서 자동 휴게 구간(중앙, 30분 그리드). 없으면 {start:null,end:null}.
+    function autoBreakWindow(inT, outT) {
+      const a = timeToMin(inT), b0 = timeToMin(outT);
+      if (a == null || b0 == null) return { start: null, end: null };
+      const b = b0 > a ? b0 : b0 + 1440;
+      const durH = autoBreak((b - a) / 60);
+      if (durH <= 0) return { start: null, end: null };
+      const dur = durH * 60;
+      let start = Math.round((a + (b - a - dur) / 2) / 30) * 30;  // 중앙, 30분 스냅
+      if (start < a) start = a;
+      if (start + dur > b) start = b - dur;
+      return { start: minToTime(start), end: minToTime(start + dur) };
+    }
+    // 근무구간 [in,out] 안의 30분 그리드 시각 목록(구간 선택 옵션용)
+    function gridTimes(inT, outT) {
+      const a = timeToMin(inT), b0 = timeToMin(outT);
+      if (a == null || b0 == null) return [];
+      const b = b0 > a ? b0 : b0 + 1440;
+      const out = [];
+      for (let m = Math.ceil(a / 30) * 30; m <= b; m += 30) out.push(minToTime(m));
+      return out;
+    }
+    // 휴게 구간을 근무구간에 맞춰 동기화 + breakH(시트·급여용) 재도출.
+    //   유효한 구간이 근무 안에 있으면 유지, 아니면 자동 구간으로 리셋.
+    function syncBreak(ent) {
+      const a = timeToMin(ent.in), b0 = timeToMin(ent.out);
+      if (a != null && b0 != null) {
+        const b = b0 > a ? b0 : b0 + 1440;
+        const bs = timeToMin(ent.break_start), be = timeToMin(ent.break_end);
+        if (bs != null && be != null && be > bs && bs >= a && be <= b) {
+          ent.breakH = breakDurH(ent); return;
+        }
+      }
+      const w = autoBreakWindow(ent.in, ent.out);
+      ent.break_start = w.start; ent.break_end = w.end;
+      ent.breakH = breakDurH(ent);
+    }
+
+    // ───────── 렌더 ─────────
+    function init() {
+      if (!parseInitData()) return;
+
+      // header
+      renderHeader();
+
+      // entries 초기화 — emp.prev에 오늘 자 기존 입력값이 있으면 그것 사용 (수정 가능)
+      // prev가 없으면 휴무 상태
+      STATE.employees.forEach(emp => {
+        if (emp.prev) {
+          STATE.entries[emp.id] = {
+            in: emp.prev.in,
+            out: emp.prev.out,
+            breakH: emp.prev.breakH || 0,
+            break_start: emp.prev.break_start || null,
+            break_end: emp.prev.break_end || null,
+            on: true,
+          };
+          syncBreak(STATE.entries[emp.id]);
+        } else {
+          STATE.entries[emp.id] = { in: null, out: null, breakH: 0, break_start: null, break_end: null, on: false };
+        }
+      });
+
+      // 기존 지원 입력값 로드 (오늘 자 출퇴근로그의 자체외 row)
+      if (Array.isArray(STATE.prev_support_entries)) {
+        STATE.supportEntries = STATE.prev_support_entries.slice();
+      }
+
+      renderMain();
+      updateSummary();
+      document.getElementById('save-btn').disabled = false;
+    }
+
+    function renderHeader() {
+      const d = new Date(STATE.date);
+      const days = ['일','월','화','수','목','금','토'];
+      document.getElementById('hdr-store').textContent =
+        `📅 ${STATE.store} · ${d.getMonth()+1}/${d.getDate()}(${days[d.getDay()]})`;
+      const subEl = document.getElementById('hdr-sub');
+      subEl.innerHTML = (STATE.manager ? `${STATE.manager} 매니저` : '스케줄 입력')
+        + ` · <span class="header-date" onclick="openDateModal()">📅 ${STATE.date} 변경</span>`;
+      adjustHeaderOffset();
+    }
+
+    // 고정 헤더 실제 높이만큼 main 상단 여백 — 헤더가 본문을 가리지 않도록
+    function adjustHeaderOffset() {
+      const hdr = document.querySelector('header');
+      const main = document.getElementById('main');
+      if (hdr && main) {
+        main.style.paddingTop = (hdr.offsetHeight + 8) + 'px';
+      }
+    }
+    window.addEventListener('resize', adjustHeaderOffset);
+
+    function renderMain() {
+      const main = document.getElementById('main');
+      main.innerHTML = '';
+
+      // 정직원 / 비정규 그룹 분리 (퇴사 대기 직원도 화면엔 표시 — 회색)
+      const fulltime = STATE.employees.filter(e => ['SV','SM','AM','Pro'].includes(e.grade));
+      const parttime = STATE.employees.filter(e => e.grade === 'Crew');
+
+      if (fulltime.length) {
+        main.appendChild(renderSection('🟢 정직원', fulltime));
+      }
+      if (parttime.length) {
+        main.appendChild(renderSection('🟡 크루', parttime));
+      }
+
+      // 🔄 지원 섹션
+      main.appendChild(renderSupportSection());
+
+      // 직원 추가 — 지원 섹션과 명확히 구분 (별도 섹션 + 구분선 + 안내)
+      const addSec = document.createElement('div');
+      addSec.className = 'add-employee-section';
+      addSec.id = 'add-employee-area';
+      addSec.innerHTML = `<div class="add-employee-label">우리 매장 직원 관리</div>`;
+      const addBtn = document.createElement('div');
+      addBtn.className = 'add-btn add-employee-btn';
+      addBtn.textContent = '👤 새 직원 추가';
+      addBtn.onclick = openAddModal;
+      addSec.appendChild(addBtn);
+      main.appendChild(addSec);
+    }
+
+    function renderSupportSection() {
+      const sec = document.createElement('div');
+      sec.className = 'section';
+      sec.id = 'support-section';
+      sec.innerHTML = `<div class="section-title">
+        <span>🔄 지원 근무 (타매장 ↔ 우리 매장)</span>
+        <span class="section-count">${STATE.supportEntries.length}건</span>
+      </div>`;
+      const list = document.createElement('div');
+      list.className = 'emp-list';
+      STATE.supportEntries.forEach((s, idx) => {
+        const r = document.createElement('div');
+        const dirText = s.direction === 'in' ? '⬅ 왔음' : '➡ 갔음';
+        r.className = 'support-row dir-' + s.direction;
+        const tag = s.direction === 'in' ? 'in' : 'out';
+        const scopeText = s.grade === 'Crew' ? `${s.hours}h` : (s.mode === 'half' ? '반일' : '종일');
+        r.innerHTML = `
+          <span class="support-tag ${tag}">${dirText}</span>
+          <div class="support-info">
+            <div class="name">${s.name} <span class="emp-grade ${s.grade}" style="font-size:10px">${s.grade}</span></div>
+            <div class="meta">${s.other_store} · ${scopeText} (${s.hours.toFixed(1)}h)</div>
+          </div>
+          <button class="support-delete" onclick="removeSupport(${idx})">삭제</button>
+        `;
+        list.appendChild(r);
+      });
+      // 추가 버튼
+      const addBtn = document.createElement('div');
+      addBtn.className = 'add-btn';
+      addBtn.style.margin = '8px 0 0';
+      addBtn.textContent = '+ 지원 근무 추가';
+      addBtn.onclick = () => openSupportModal();
+      sec.appendChild(list);
+      sec.appendChild(addBtn);
+      return sec;
+    }
+
+    // ───────── 지원 modal ─────────
+    let SUP_CTX = null;  // {direction, other_store, name, grade, hours, mode}
+
+    function openSupportModal() {
+      SUP_CTX = { direction: null, other_store: '', name: '', grade: null, hours: 0, mode: 'full' };
+      document.getElementById('sup-name').value = '';
+      document.getElementById('sup-info').textContent = '';
+      document.getElementById('sup-suggest').style.display = 'none';
+      document.querySelectorAll('.sup-dir-chip').forEach(c => c.classList.remove('selected'));
+
+      // 매장 드롭다운 (자기 매장 제외)
+      const sel = document.getElementById('sup-store');
+      sel.innerHTML = '<option value="">매장 선택</option>';
+      Object.keys(STATE.all_stores || {}).forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s; opt.textContent = s;
+        sel.appendChild(opt);
+      });
+
+      // 직급 picker
+      const gp = document.getElementById('sup-grades');
+      gp.innerHTML = '';
+      GRADES.forEach(g => {
+        const chip = document.createElement('div');
+        chip.className = 'grade-chip';
+        chip.textContent = g;
+        chip.onclick = () => {
+          SUP_CTX.grade = g;
+          markSelected(gp, chip);
+          renderSupScope();
+        };
+        gp.appendChild(chip);
+      });
+
+      renderSupScope();
+      document.getElementById('support-modal').classList.add('show');
+    }
+
+    function closeSupportModal() {
+      document.getElementById('support-modal').classList.remove('show');
+      SUP_CTX = null;
+    }
+
+    function supSetDir(dir) {
+      SUP_CTX.direction = dir;
+      document.querySelectorAll('.sup-dir-chip').forEach(c => {
+        c.classList.toggle('selected', c.dataset.dir === dir);
+      });
+      // 라벨 변경
+      document.getElementById('sup-store-label').textContent =
+        dir === 'in' ? '출처 매장 (어디서 왔는지)' : '행선지 매장 (어디로 갔는지)';
+      supRefreshSuggest();
+    }
+
+    function supOnStoreChange() {
+      SUP_CTX.other_store = document.getElementById('sup-store').value;
+      supRefreshSuggest();
+    }
+
+    function supOnNameInput() {
+      const v = document.getElementById('sup-name').value.trim();
+      SUP_CTX.name = v;
+      supRefreshSuggest();
+    }
+
+    function supRefreshSuggest() {
+      const box = document.getElementById('sup-suggest');
+      const q = (SUP_CTX.name || '').toLowerCase();
+      // 'in' 방향이면 출처매장 직원 list 사용, 'out' 방향이면 자기 매장 직원 list
+      let pool = [];
+      if (SUP_CTX.direction === 'in' && SUP_CTX.other_store) {
+        pool = STATE.all_stores[SUP_CTX.other_store] || [];
+        pool = pool.map(e => ({ name: e.n, grade: e.g, id: e.i }));
+      } else if (SUP_CTX.direction === 'out') {
+        pool = STATE.employees.filter(e => !e.isNew).map(e => ({
+          name: e.name, grade: e.grade, id: e.id
+        }));
+      }
+      const filtered = q ? pool.filter(e => e.name.toLowerCase().includes(q)) : pool;
+      if (!filtered.length) { box.style.display = 'none'; return; }
+      box.innerHTML = filtered.slice(0, 8).map(e => `
+        <div class="item" onclick="supPickName('${e.name.replace(/'/g, "\\'")}','${e.grade}')">
+          <span>${e.name}</span>
+          <span class="gr emp-grade ${e.grade}">${e.grade}</span>
+        </div>
+      `).join('');
+      box.style.display = 'block';
+    }
+
+    function supPickName(name, grade) {
+      SUP_CTX.name = name;
+      SUP_CTX.grade = grade;
+      document.getElementById('sup-name').value = name;
+      document.getElementById('sup-suggest').style.display = 'none';
+      // 직급 chip 강조
+      const gp = document.getElementById('sup-grades');
+      gp.querySelectorAll('.grade-chip').forEach(c => {
+        c.classList.toggle('selected', c.textContent === grade);
+      });
+      renderSupScope();
+    }
+
+    function renderSupScope() {
+      const area = document.getElementById('sup-scope-area');
+      const label = document.getElementById('sup-scope-label');
+      if (!SUP_CTX.grade) {
+        area.innerHTML = '<div style="color:var(--hint);font-size:13px;padding:8px">직급 선택 후 표시됨</div>';
+        label.textContent = '근무 시간';
+        return;
+      }
+      const sdh = STATE.support_daily_hours || {};
+      if (SUP_CTX.grade === 'Crew') {
+        label.textContent = 'Crew 근무 시간';
+        area.innerHTML = `
+          <input class="form-input" type="number" step="0.5" min="0" max="24"
+                 value="${SUP_CTX.hours || ''}" placeholder="시간"
+                 oninput="supSetHours(this.value)">
+        `;
+      } else {
+        const full = sdh[SUP_CTX.grade] || 8;
+        const half = full / 2;
+        // 자동 hours 동기화
+        if (!SUP_CTX.mode) SUP_CTX.mode = 'full';
+        SUP_CTX.hours = SUP_CTX.mode === 'half' ? half : full;
+        label.textContent = `${SUP_CTX.grade} 종일/반일 (종일 ${full}h)`;
+        area.innerHTML = `
+          <div class="sup-scope-chip ${SUP_CTX.mode==='full'?'selected':''}" onclick="supSetMode('full')">종일 (${full}h)</div>
+          <div class="sup-scope-chip ${SUP_CTX.mode==='half'?'selected':''}" onclick="supSetMode('half')">반일 (${half}h)</div>
+        `;
+      }
+    }
+
+    function supSetMode(mode) {
+      SUP_CTX.mode = mode;
+      renderSupScope();
+    }
+    function supSetHours(v) {
+      SUP_CTX.hours = parseFloat(v) || 0;
+    }
+
+    function confirmSupport() {
+      if (!SUP_CTX.direction) { alert('방향(왔음/갔음)을 선택해주세요'); return; }
+      if (!SUP_CTX.other_store) { alert('상대 매장을 선택해주세요'); return; }
+      if (!SUP_CTX.name) { alert('직원 이름을 입력해주세요'); return; }
+      if (!SUP_CTX.grade) { alert('직급을 선택해주세요'); return; }
+      if (!SUP_CTX.hours || SUP_CTX.hours <= 0) { alert('근무 시간을 입력해주세요'); return; }
+      STATE.supportEntries.push({
+        direction: SUP_CTX.direction,
+        other_store: SUP_CTX.other_store,
+        name: SUP_CTX.name,
+        grade: SUP_CTX.grade,
+        hours: SUP_CTX.hours,
+        mode: SUP_CTX.grade === 'Crew' ? null : SUP_CTX.mode,
+      });
+      closeSupportModal();
+      renderMain();
+      updateSummary();
+      scrollToEl('support-section');  // 추가된 지원 영역으로 자동 스크롤
+    }
+
+    // 고정 헤더(약 72px) 아래로 부드럽게 스크롤
+    function scrollToEl(idOrEl) {
+      const el = typeof idOrEl === 'string' ? document.getElementById(idOrEl) : idOrEl;
+      if (!el) return;
+      setTimeout(() => {
+        const hdr = document.querySelector('header');
+        const offset = (hdr ? hdr.offsetHeight : 64) + 12;
+        const y = el.getBoundingClientRect().top + window.pageYOffset - offset;
+        window.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
+      }, 80);
+    }
+
+    function removeSupport(idx) {
+      STATE.supportEntries.splice(idx, 1);
+      renderMain();
+      updateSummary();
+    }
+
+    // ───────── 날짜 picker modal ─────────
+    function openDateModal() {
+      const d = new Date(STATE.date);
+      const y = d.getFullYear(), m = d.getMonth();
+      const first = new Date(y, m, 1);
+      const last = new Date(y, m + 1, 0);
+      const todayStr = new Date().toISOString().split('T')[0];
+      document.getElementById('date-modal-title').textContent =
+        `📅 ${y}년 ${m+1}월 — 날짜 선택`;
+      const grid = document.getElementById('date-grid');
+      grid.innerHTML = '';
+      ['일','월','화','수','목','금','토'].forEach(d => {
+        const c = document.createElement('div');
+        c.className = 'date-cell dow';
+        c.textContent = d;
+        grid.appendChild(c);
+      });
+      // 첫 주 빈칸
+      for (let i = 0; i < first.getDay(); i++) {
+        const c = document.createElement('div');
+        c.className = 'date-cell empty';
+        grid.appendChild(c);
+      }
+      for (let day = 1; day <= last.getDate(); day++) {
+        const dateStr = `${y}-${String(m+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+        const c = document.createElement('div');
+        c.className = 'date-cell';
+        if (dateStr === STATE.date) c.classList.add('selected');
+        if (dateStr === todayStr) c.classList.add('today');
+        c.textContent = day;
+        c.onclick = () => pickDate(dateStr);
+        grid.appendChild(c);
+      }
+      document.getElementById('date-modal').classList.add('show');
+    }
+
+    function closeDateModal() {
+      document.getElementById('date-modal').classList.remove('show');
+    }
+
+    function pickDate(dateStr) {
+      STATE.date = dateStr;
+      // 선택 날짜의 prev 로드 → STATE.entries / supportEntries 재구성
+      applyPrevForDate(dateStr);
+      renderHeader();
+      renderMain();
+      updateSummary();
+      closeDateModal();
+    }
+
+    function applyPrevForDate(dateStr) {
+      // 직원별 prev 적용
+      const prevMap = (STATE.prev_by_date_emp || {})[dateStr] || {};
+      STATE.employees.forEach(emp => {
+        const p = prevMap[emp.id];
+        if (p) {
+          STATE.entries[emp.id] = {
+            in: p.in, out: p.out,
+            breakH: p.breakH || 0,
+            break_start: p.break_start || null,
+            break_end: p.break_end || null,
+            on: true,
+          };
+          syncBreak(STATE.entries[emp.id]);
+        } else {
+          // 그날 데이터 없음 → 휴무
+          STATE.entries[emp.id] = { in: null, out: null, breakH: 0, break_start: null, break_end: null, on: false };
+        }
+      });
+      // 지원 entries 재구성
+      const sup = (STATE.prev_support_by_date || {})[dateStr] || [];
+      STATE.supportEntries = sup.slice();
+      // 시급 변경분 / 삭제 / 신규 직원은 진입 후 상태이므로 그대로 유지 (저장 시 함께 전송)
+    }
+
+    // (구) 매장 단일 Crew 시급 입력 — 개인별 시급으로 변경되어 제거됨
+
+    // 정렬: 삭제대기 맨 아래 → 근무중 우선 → 직급(SV·SM·AM·Pro·Crew) → 이름
+    const GRADE_RANK = { SV: 0, SM: 1, AM: 2, Pro: 3, Crew: 4 };
+    function sortEmployees(employees) {
+      return employees.slice().sort((a, b) => {
+        const aDel = STATE.deletedEmployees.includes(a.id) ? 1 : 0;
+        const bDel = STATE.deletedEmployees.includes(b.id) ? 1 : 0;
+        if (aDel !== bDel) return aDel - bDel;
+        const aOn = STATE.entries[a.id]?.on ? 0 : 1;
+        const bOn = STATE.entries[b.id]?.on ? 0 : 1;
+        if (aOn !== bOn) return aOn - bOn;
+        const ar = GRADE_RANK[a.grade] ?? 9, br = GRADE_RANK[b.grade] ?? 9;
+        if (ar !== br) return ar - br;
+        return (a.name || '').localeCompare(b.name || '', 'ko');
+      });
+    }
+
+    function renderSection(title, employees) {
+      const sorted = sortEmployees(employees);
+      const sec = document.createElement('div');
+      sec.className = 'section';
+      const onCount = sorted.filter(e => STATE.entries[e.id]?.on).length;
+      sec.innerHTML = `<div class="section-title"><span>${title}</span><span class="section-count">근무 ${onCount} · 휴무 ${sorted.length - onCount}</span></div>`;
+      const list = document.createElement('div');
+      list.className = 'emp-list';
+      sorted.forEach(emp => list.appendChild(renderEmpRow(emp)));
+      sec.appendChild(list);
+      return sec;
+    }
+
+    function renderEmpRow(emp) {
+      const ent = STATE.entries[emp.id];
+      const isDeleting = STATE.deletedEmployees.includes(emp.id);
+      const row = document.createElement('div');
+      const incomplete = !isDeleting && ent.on && (!ent.in || !ent.out);
+      row.className = 'emp-row'
+        + (ent.on ? '' : ' off')
+        + (incomplete ? ' incomplete' : '')
+        + (isDeleting ? ' deleting' : '');
+      row.id = `emp-row-${emp.id}`;
+
+      const work = ent.on ? calcWork(ent.in, ent.out, ent.breakH) : 0;
+      const workStr = ent.on ? (incomplete ? '⚠️ 시간 입력 필요' : `${work.toFixed(1)}h`) : '휴무';
+
+      // Crew 시급 chip (개인별)
+      const crewRateChip = (emp.grade === 'Crew' && !emp.isNew)
+        ? `<span class="crew-rate-chip" onclick="openCrewRateModal('${emp.id}')">💵 ${(STATE.crewRateChanges[emp.id] ?? emp.base_rate ?? 13000).toLocaleString()}</span>`
+        : '';
+
+      // 삭제/취소 버튼
+      const deleteBtn = isDeleting
+        ? `<button class="row-delete undo" onclick="undoEmpDelete('${emp.id}')" title="삭제 취소">↺</button>`
+        : (emp.isNew
+          ? `<button class="row-delete" onclick="removeNewEmployee('${emp.id}')" title="신규 직원 제외">✕</button>`
+          : `<button class="row-delete" onclick="markEmpDelete('${emp.id}','${(emp.name||'').replace(/'/g, "\\'")}')" title="직원 삭제">✕</button>`);
+
+      row.innerHTML = `
+        <div class="emp-name-row">
+          <div>
+            <span class="emp-name">${emp.name}</span>
+            <span class="emp-grade ${emp.grade}">${emp.grade}</span>
+            ${crewRateChip}
+          </div>
+          <div style="display:flex; gap:6px; align-items:center">
+            ${deleteBtn}
+            <div class="toggle ${ent.on ? 'on' : ''}" onclick="toggleOn('${emp.id}')"></div>
+          </div>
+        </div>
+        ${isDeleting ? `
+          <div class="emp-time-row">
+            <div class="off-label">🗑 삭제 대기 — 저장 시 시트에 반영</div>
+          </div>
+        ` : (ent.on ? `
+          <div class="emp-time-row">
+            <div class="time-chip" onclick="openTimeModal('${emp.id}', 'in')">
+              <span class="label">출</span>
+              <span class="${ent.in ? '' : 'empty'}">${ent.in || '--:--'}</span>
+            </div>
+            <div class="time-chip" onclick="openTimeModal('${emp.id}', 'out')">
+              <span class="label">퇴</span>
+              <span class="${ent.out ? '' : 'empty'}">${ent.out || '--:--'}</span>
+            </div>
+            <div class="break-chip" onclick="openBreakModal('${emp.id}')">${ent.break_start && ent.break_end ? `휴게 ${ent.break_start}~${ent.break_end}` : '휴게 없음'}</div>
+            <div class="work-hours ${incomplete ? 'warn' : ''}">${workStr}</div>
+          </div>
+        ` : `
+          <div class="emp-time-row">
+            <div class="off-label">휴무 · 토글 ON으로 변경</div>
+          </div>
+        `)}
+      `;
+      return row;
+    }
+
+    // ───────── 행 단위 삭제 ─────────
+    function markEmpDelete(empId, empName) {
+      const msg =
+        `⚠️ ${empName} 직원 삭제\n\n` +
+        `이 직원이 여전히 본 매장에서 근무 중이라면 삭제하지 마세요.\n` +
+        `삭제는 타매장 이동 또는 퇴직 등으로 더 이상 본 매장에서 일하지 않을 때만 사용합니다.\n\n` +
+        `정말 삭제하시겠습니까?`;
+      if (!confirm(msg)) return;
+      if (!STATE.deletedEmployees.includes(empId)) STATE.deletedEmployees.push(empId);
+      if (STATE.entries[empId]) STATE.entries[empId].on = false;
+      refreshRow(empId);
+    }
+    function undoEmpDelete(empId) {
+      STATE.deletedEmployees = STATE.deletedEmployees.filter(id => id !== empId);
+      refreshRow(empId);
+    }
+    function removeNewEmployee(empId) {
+      // 신규 추가 대기 직원을 미니앱 내에서 제거 (시트 반영 X)
+      STATE.newEmployees = STATE.newEmployees.filter(e => e.id !== empId);
+      STATE.employees = STATE.employees.filter(e => e.id !== empId);
+      delete STATE.entries[empId];
+      renderMain();
+      updateSummary();
+    }
+
+    // ───────── Crew 개인 시급 mini-modal ─────────
+    let CRM_CTX = null;  // {empId, value}
+
+    function openCrewRateModal(empId) {
+      const emp = STATE.employees.find(e => e.id === empId);
+      if (!emp) return;
+      const current = STATE.crewRateChanges[empId] ?? emp.base_rate ?? 13000;
+      CRM_CTX = { empId, value: current };
+      document.getElementById('crm-title').textContent = `💵 ${emp.name} 시급`;
+      document.getElementById('crm-sub').textContent = '개인별 base 시급 (보험·퇴직금 별도). 저장 시 본사 시트에도 반영.';
+      const input = document.getElementById('crm-input');
+      const presets = [12500, 13000];
+      input.value = presets.includes(current) ? '' : current;
+      document.querySelectorAll('#crew-rate-modal .rate-chip').forEach(el => {
+        el.classList.toggle('selected', Number(el.dataset.rate) === current);
+      });
+      document.getElementById('crew-rate-modal').classList.add('show');
+    }
+    function closeCrewRateModal() {
+      document.getElementById('crew-rate-modal').classList.remove('show');
+      CRM_CTX = null;
+    }
+    function crmSet(v) {
+      CRM_CTX.value = v;
+      document.getElementById('crm-input').value = '';
+      document.querySelectorAll('#crew-rate-modal .rate-chip').forEach(el => {
+        el.classList.toggle('selected', Number(el.dataset.rate) === v);
+      });
+    }
+    function crmInput(v) {
+      const n = parseInt(v, 10);
+      if (!isNaN(n) && n >= 1000 && n <= 50000) {
+        CRM_CTX.value = n;
+        document.querySelectorAll('#crew-rate-modal .rate-chip').forEach(el => el.classList.remove('selected'));
+      }
+    }
+    function confirmCrewRate() {
+      if (!CRM_CTX || !CRM_CTX.value) { alert('시급을 입력해주세요'); return; }
+      const emp = STATE.employees.find(e => e.id === CRM_CTX.empId);
+      if (!emp) { closeCrewRateModal(); return; }
+      const prev = emp.base_rate;
+      if (CRM_CTX.value === prev) {
+        // 원래 값으로 되돌림 → 변경 취소
+        delete STATE.crewRateChanges[CRM_CTX.empId];
+      } else {
+        STATE.crewRateChanges[CRM_CTX.empId] = CRM_CTX.value;
+      }
+      closeCrewRateModal();
+      refreshRow(CRM_CTX?.empId || emp.id);
+    }
+
+    function refreshRow(empId) {
+      const emp = STATE.employees.find(e => e.id === empId) || STATE.newEmployees.find(e => e.id === empId);
+      if (!emp) return;
+      const oldRow = document.getElementById(`emp-row-${empId}`);
+      const newRow = renderEmpRow(emp);
+      oldRow.replaceWith(newRow);
+      updateSummary();
+    }
+
+    function updateSummary() {
+      // 미니앱에선 시급/인건비 노출 X — 인원/시간만
+      let totalH = 0, count = 0, incompleteCount = 0;
+      STATE.employees.forEach(emp => {
+        const ent = STATE.entries[emp.id];
+        if (!ent?.on) return;
+        if (!ent.in || !ent.out) { incompleteCount++; return; }
+        const h = calcWork(ent.in, ent.out, ent.breakH);
+        if (h > 0) { count++; totalH += h; }
+      });
+      const sumEl = document.getElementById('sum-amount');
+      const btn = document.getElementById('save-btn');
+      if (incompleteCount > 0) {
+        sumEl.innerHTML = `<span style="color:var(--destructive)">⚠️ ${incompleteCount}명 출퇴근 시간 누락</span>`;
+        if (btn) { btn.disabled = true; btn.textContent = '⚠️ 시간 입력 필요'; }
+      } else {
+        sumEl.textContent = `${count}명 · ${totalH.toFixed(1)}h 근무`;
+        if (btn) { btn.disabled = false; btn.textContent = '💾 저장'; }
+      }
+    }
+
+    // ───────── 토글 ─────────
+    function toggleOn(empId) {
+      const ent = STATE.entries[empId];
+      ent.on = !ent.on;
+      if (ent.on && !ent.in) {
+        // 휴무 → 근무 전환 시 어제 시간 복원
+        const emp = STATE.employees.find(e => e.id === empId) || STATE.newEmployees.find(e => e.id === empId);
+        if (emp?.prev) { Object.assign(ent, { in: emp.prev.in, out: emp.prev.out, breakH: emp.prev.breakH, break_start: emp.prev.break_start || null, break_end: emp.prev.break_end || null }); syncBreak(ent); }
+      }
+      // 전체 재렌더(정렬 반영) 후, 토글한 직원이 이동한 위치로 스크롤
+      renderMain();
+      scrollToEl('emp-row-' + empId);
+    }
+
+    // ───────── 출/퇴근 picker modal ─────────
+    const QUICK_TIMES = ['06:30','09:00','10:00','11:00','13:00','17:00','22:00','24:00'];
+    function openTimeModal(empId, field) {
+      const ent = STATE.entries[empId];
+      const emp = STATE.employees.find(e => e.id === empId) || STATE.newEmployees.find(e => e.id === empId);
+      TM_CTX = { empId, field, current: ent[field] || '09:00' };
+
+      document.getElementById('tm-title').textContent = `${emp.name} · ${field === 'in' ? '출근' : '퇴근'} 시각`;
+      document.getElementById('tm-sub').textContent = `현재: ${ent[field] || '미설정'}`;
+
+      // quick chips
+      const chips = document.getElementById('tm-chips');
+      chips.innerHTML = '';
+      QUICK_TIMES.forEach(t => {
+        const chip = document.createElement('div');
+        chip.className = 'quick-chip';
+        chip.textContent = t;
+        chip.onclick = () => { TM_CTX.current = t; renderTMSelects(); markSelected(chips, chip); };
+        chips.appendChild(chip);
+      });
+
+      // hour/min selects
+      const hourSel = document.getElementById('tm-hour');
+      const minSel = document.getElementById('tm-min');
+      hourSel.innerHTML = '';
+      for (let h = 0; h <= 24; h++) {
+        const opt = document.createElement('option');
+        opt.value = String(h).padStart(2,'0'); opt.textContent = String(h).padStart(2,'0');
+        hourSel.appendChild(opt);
+      }
+      minSel.innerHTML = '';
+      [0, 15, 30, 45].forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = String(m).padStart(2,'0'); opt.textContent = String(m).padStart(2,'0');
+        minSel.appendChild(opt);
+      });
+      hourSel.onchange = minSel.onchange = () => {
+        TM_CTX.current = `${hourSel.value}:${minSel.value}`;
+      };
+
+      renderTMSelects();
+      document.getElementById('time-modal').classList.add('show');
+    }
+    function renderTMSelects() {
+      const [h, m] = TM_CTX.current.split(':');
+      document.getElementById('tm-hour').value = h;
+      document.getElementById('tm-min').value = m;
+    }
+    function markSelected(container, el) {
+      Array.from(container.children).forEach(c => c.classList.remove('selected'));
+      el.classList.add('selected');
+    }
+    function closeTimeModal() {
+      document.getElementById('time-modal').classList.remove('show');
+      TM_CTX = null;
+    }
+    function confirmTimeModal() {
+      if (!TM_CTX) return;
+      STATE.entries[TM_CTX.empId][TM_CTX.field] = TM_CTX.current;
+      // 근무시간 바뀌면 휴게 구간 동기화(근무 밖이면 자동 구간으로)
+      const ent = STATE.entries[TM_CTX.empId];
+      if (ent.in && ent.out) syncBreak(ent);
+      refreshRow(TM_CTX.empId);
+      closeTimeModal();
+    }
+
+    // ───────── 휴게 picker modal (시간 구간) ─────────
+    function openBreakModal(empId) {
+      const ent = STATE.entries[empId];
+      if (!ent.in || !ent.out) { alert('근무 시간(출근·퇴근)을 먼저 입력해주세요.'); return; }
+      const emp = STATE.employees.find(e => e.id === empId) || STATE.newEmployees.find(e => e.id === empId);
+      BM_CTX = { empId };
+
+      document.getElementById('bm-title').textContent = `${emp.name} · 휴게`;
+      document.getElementById('bm-sub').textContent = `근무 ${ent.in}~${ent.out} 안에서 선택`;
+
+      const times = gridTimes(ent.in, ent.out);
+      const auto = autoBreakWindow(ent.in, ent.out);
+      const curS = ent.break_start || auto.start || times[0];
+      const curE = ent.break_end || auto.end || times[times.length - 1];
+      const opt = (sel) => times.map(t => `<option value="${t}"${t === sel ? ' selected' : ''}>${t}</option>`).join('');
+      document.getElementById('bm-chips').innerHTML =
+        `<div class="time-picker">
+           <select class="time-select" id="bm-start" onchange="bmStartChanged()">${opt(curS)}</select>
+           <span class="time-sep">~</span>
+           <select class="time-select" id="bm-end">${opt(curE)}</select>
+         </div>
+         <div class="break-none" onclick="confirmBreakNone()">휴게 없음으로</div>`;
+
+      document.getElementById('break-modal').classList.add('show');
+    }
+    function closeBreakModal() {
+      document.getElementById('break-modal').classList.remove('show');
+      BM_CTX = null;
+    }
+    function confirmBreakModal() {
+      if (!BM_CTX) return;
+      const ent = STATE.entries[BM_CTX.empId];
+      const s = document.getElementById('bm-start').value;
+      const e = document.getElementById('bm-end').value;
+      if (timeToMin(e) <= timeToMin(s)) { alert('휴게 종료 시각이 시작보다 늦어야 해요.'); return; }
+      ent.break_start = s; ent.break_end = e; ent.breakH = breakDurH(ent);
+      refreshRow(BM_CTX.empId);
+      closeBreakModal();
+    }
+    // 휴게 시작 선택 시 종료를 자동(+근무길이별: 8h↑ 1시간 / 4h↑ 30분)으로 채움. 이후 종료 수동 조정 가능.
+    function bmStartChanged() {
+      if (!BM_CTX) return;
+      const ent = STATE.entries[BM_CTX.empId];
+      const a = timeToMin(ent.in), b0 = timeToMin(ent.out);
+      if (a == null || b0 == null) return;
+      const b = b0 > a ? b0 : b0 + 1440;
+      const durH = autoBreak((b - a) / 60);
+      const offset = durH > 0 ? durH * 60 : 30;
+      const endSel = document.getElementById('bm-end');
+      let sAbs = timeToMin(document.getElementById('bm-start').value);
+      if (sAbs < a) sAbs += 1440;
+      let endAbs = Math.min(sAbs + offset, b);
+      const want = minToTime(endAbs);
+      endSel.value = [...endSel.options].some(o => o.value === want)
+        ? want : endSel.options[endSel.options.length - 1].value;
+    }
+    function confirmBreakNone() {
+      if (!BM_CTX) return;
+      const ent = STATE.entries[BM_CTX.empId];
+      ent.break_start = null; ent.break_end = null; ent.breakH = 0;
+      refreshRow(BM_CTX.empId);
+      closeBreakModal();
+    }
+
+    // ───────── 직원 추가 modal (신규 추가 전용) ─────────
+    const GRADES = ['SV','SM','AM','Pro','Crew'];
+    function openAddModal() {
+      AM_CTX = { name: '', grade: null, crew_rate: 13000 };
+      document.getElementById('add-name').value = '';
+      document.getElementById('add-grade-info').textContent = '';
+      document.getElementById('add-crew-rate-area').style.display = 'none';
+      document.getElementById('add-crew-rate').value = '';
+      document.querySelectorAll('#add-crew-rate-area .rate-chip').forEach(el => {
+        el.classList.toggle('selected', Number(el.dataset.rate) === 13000);
+      });
+
+      // 직급 picker
+      const gp = document.getElementById('add-grades');
+      gp.innerHTML = '';
+      GRADES.forEach(g => {
+        const chip = document.createElement('div');
+        chip.className = 'grade-chip';
+        chip.textContent = g;
+        chip.onclick = () => {
+          AM_CTX.grade = g;
+          markSelected(gp, chip);
+          document.getElementById('add-grade-info').textContent = `${g} 직급으로 등록됩니다`;
+          // Crew면 시급 입력 표시
+          document.getElementById('add-crew-rate-area').style.display = (g === 'Crew') ? 'block' : 'none';
+        };
+        gp.appendChild(chip);
+      });
+
+      document.getElementById('add-modal').classList.add('show');
+    }
+
+    function addSetCrewRate(v) {
+      AM_CTX.crew_rate = v;
+      document.getElementById('add-crew-rate').value = '';
+      document.querySelectorAll('#add-crew-rate-area .rate-chip').forEach(el => {
+        el.classList.toggle('selected', Number(el.dataset.rate) === v);
+      });
+    }
+    function addCrewRateInput(v) {
+      const n = parseInt(v, 10);
+      if (!isNaN(n) && n >= 1000 && n <= 50000) {
+        AM_CTX.crew_rate = n;
+        document.querySelectorAll('#add-crew-rate-area .rate-chip').forEach(el => el.classList.remove('selected'));
+      }
+    }
+
+    function closeAddModal() {
+      document.getElementById('add-modal').classList.remove('show');
+      AM_CTX = null;
+      renderMain();
+      updateSummary();
+    }
+    function confirmAddEmployee() {
+      const name = document.getElementById('add-name').value.trim();
+      if (!name) { alert('이름을 입력해주세요'); return; }
+      if (!AM_CTX.grade) { alert('직급을 선택해주세요'); return; }
+      if (AM_CTX.grade === 'Crew' && (!AM_CTX.crew_rate || AM_CTX.crew_rate <= 0)) {
+        alert('Crew 시급을 입력해주세요'); return;
+      }
+
+      // 임시 ID로 newEmployees에 추가
+      const tempId = `NEW_${Date.now()}`;
+      const newEmp = {
+        id: tempId, name, grade: AM_CTX.grade, prev: null, isNew: true,
+        base_rate: AM_CTX.grade === 'Crew' ? AM_CTX.crew_rate : null,
+      };
+      STATE.newEmployees.push(newEmp);
+      STATE.employees.push(newEmp);
+      STATE.entries[tempId] = { in: '09:00', out: '18:00', breakH: 1.0, break_start: '13:30', break_end: '14:30', on: true };
+
+      closeAddModal();
+      scrollToEl('emp-row-' + tempId);  // 추가된 직원 행으로 자동 스크롤
+    }
+
+    // ───────── 저장 ─────────
+    function onSave() {
+      // 출근 ON + 시간 미입력 직원 차단
+      const incomplete = STATE.employees.filter(emp => {
+        const ent = STATE.entries[emp.id];
+        return ent?.on && (!ent.in || !ent.out);
+      });
+      if (incomplete.length > 0) {
+        alert(`⚠️ 다음 직원의 출퇴근 시간을 입력해주세요:\n\n` +
+              incomplete.map(e => `• ${e.name} (${e.grade})`).join('\n'));
+        return;
+      }
+      const payload = {
+        store: STATE.store,
+        date: STATE.date,
+        deleted_employees: STATE.deletedEmployees.slice(), // 삭제 처리 대상 직원ID list
+        entries: [],
+        support_entries: STATE.supportEntries.slice(),     // [{direction, other_store, name, grade, hours, mode}]
+        // Crew 시급은 개인별 — 신규는 base_rate, 기존 변경은 entries.base_rate로 전달
+        new_employees: STATE.newEmployees.map(e => ({
+          name: e.name, grade: e.grade,
+          hourly_rate: e.grade === 'Crew' ? e.base_rate : null,
+        })),
+      };
+      STATE.employees.forEach(emp => {
+        const ent = STATE.entries[emp.id];
+        if (!ent) return;
+        // 삭제 대기 직원은 저장 시 자동 휴무 (인건비 기록 X)
+        const isDeleting = STATE.deletedEmployees.includes(emp.id);
+        const on = ent.on && !isDeleting;
+        const work = on ? calcWork(ent.in, ent.out, ent.breakH) : 0;
+        const entryObj = {
+          id: emp.isNew ? null : emp.id,
+          name: emp.name,
+          grade: emp.grade,
+          in: on ? ent.in : null,
+          out: on ? ent.out : null,
+          breakH: on ? ent.breakH : 0,
+          break_start: on ? (ent.break_start || null) : null,
+          break_end: on ? (ent.break_end || null) : null,
+          hours: work,
+        };
+        // Crew 시급 변경분 전달 (개인별)
+        if (emp.grade === 'Crew' && STATE.crewRateChanges[emp.id]) {
+          entryObj.base_rate = STATE.crewRateChanges[emp.id];
+        }
+        payload.entries.push(entryObj);
+      });
+
+      // 디버그
+      console.log('SAVE payload:', payload);
+
+      // localStorage 백업 (저장 실패 시 다음 진입 복원)
+      try {
+        localStorage.setItem(`labor_backup_${STATE.store}_${STATE.date}`, JSON.stringify(payload));
+      } catch (e) {}
+
+      if (tg) {
+        tg.sendData(JSON.stringify(payload));
+        // sendData 호출 시 텔레그램이 미니앱을 자동 close하지만,
+        // 일부 클라이언트에서 닫히지 않는 경우 대비해 명시적으로 닫음.
+        try {
+          if (typeof tg.close === 'function') {
+            setTimeout(() => { try { tg.close(); } catch (e) {} }, 150);
+          }
+        } catch (e) {}
+      } else {
+        alert('저장 데이터:\n' + JSON.stringify(payload, null, 2));
+      }
+    }
+
+    function showError(msg) {
+      const banner = document.getElementById('err-banner');
+      banner.textContent = '⚠️ ' + msg;
+      banner.style.display = 'block';
+      document.getElementById('loading').style.display = 'none';
+    }
+
+    // ───────── 시작 ─────────
+    document.addEventListener('DOMContentLoaded', init);
+  </script>
+
+</body>
+</html>
