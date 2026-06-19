@@ -622,6 +622,8 @@
   <script>
     // ───────── Telegram WebApp 초기화 ─────────
     const tg = window.Telegram?.WebApp;
+    // 알림: Telegram WebApp에선 native alert()가 이후 <select> 동작을 막음 → tg.showAlert 사용(폴백 alert)
+    function say(msg) { try { if (tg && tg.showAlert) { tg.showAlert(String(msg)); return; } } catch (e) {} window.alert(msg); }
     if (tg) {
       tg.ready();
       tg.expand();
@@ -1041,14 +1043,14 @@
     }
 
     function confirmSupport() {
-      if (!SUP_CTX.direction) { alert('방향(왔음/갔음)을 선택해주세요'); return; }
-      if (!SUP_CTX.other_store) { alert('상대 매장을 선택해주세요'); return; }
-      if (!SUP_CTX.name) { alert('직원 이름을 입력해주세요'); return; }
-      if (!SUP_CTX.grade) { alert('직급을 선택해주세요'); return; }
-      if (!SUP_CTX.in) { alert('출근 시각을 입력해주세요'); return; }
-      if (!SUP_CTX.out) { alert('퇴근 시각을 입력해주세요'); return; }
+      if (!SUP_CTX.direction) { say('방향(왔음/갔음)을 선택해주세요'); return; }
+      if (!SUP_CTX.other_store) { say('상대 매장을 선택해주세요'); return; }
+      if (!SUP_CTX.name) { say('직원 이름을 입력해주세요'); return; }
+      if (!SUP_CTX.grade) { say('직급을 선택해주세요'); return; }
+      if (!SUP_CTX.in) { say('출근 시각을 입력해주세요'); return; }
+      if (!SUP_CTX.out) { say('퇴근 시각을 입력해주세요'); return; }
       SUP_CTX.hours = calcWork(SUP_CTX.in, SUP_CTX.out, SUP_CTX.breakH);
-      if (SUP_CTX.hours <= 0) { alert('출퇴근 시각을 확인해주세요 (근무 시간이 0입니다)'); return; }
+      if (SUP_CTX.hours <= 0) { say('출퇴근 시각을 확인해주세요 (근무 시간이 0입니다)'); return; }
       STATE.supportEntries.push({
         direction: SUP_CTX.direction,
         other_store: SUP_CTX.other_store,
@@ -1320,7 +1322,7 @@
       }
     }
     function confirmCrewRate() {
-      if (!CRM_CTX || !CRM_CTX.value) { alert('시급을 입력해주세요'); return; }
+      if (!CRM_CTX || !CRM_CTX.value) { say('시급을 입력해주세요'); return; }
       const emp = STATE.employees.find(e => e.id === CRM_CTX.empId);
       if (!emp) { closeCrewRateModal(); return; }
       const prev = emp.base_rate;
@@ -1482,11 +1484,11 @@
       // 자정 넘는 근무 없음 — 퇴근은 출근보다 늦게만(역전 입력 차단)
       const _v = timeToMin(TM_CTX.current);
       if (TM_CTX.field === 'out' && ent.in && _v <= timeToMin(ent.in)) {
-        alert('퇴근 시각은 출근 시각보다 늦어야 합니다.\n(자정을 넘기는 근무는 입력하지 않습니다)');
+        say('퇴근 시각은 출근 시각보다 늦어야 합니다.\n(자정을 넘기는 근무는 입력하지 않습니다)');
         return;
       }
       if (TM_CTX.field === 'in' && TM_CTX.empId === '__SUP__' && ent.out && _v >= timeToMin(ent.out)) {
-        alert('출근 시각은 퇴근 시각보다 일러야 합니다.');
+        say('출근 시각은 퇴근 시각보다 일러야 합니다.');
         return;
       }
       ent[TM_CTX.field] = TM_CTX.current;
@@ -1512,7 +1514,7 @@
     // empId === '__SUP__' 이면 SUP_CTX를 대상으로 동작
     function openBreakModal(empId) {
       const ent = _tmEnt(empId);
-      if (!ent.in || !ent.out) { alert('근무 시간(출근·퇴근)을 먼저 입력해주세요.'); return; }
+      if (!ent.in || !ent.out) { say('근무 시간(출근·퇴근)을 먼저 입력해주세요.'); return; }
       BM_CTX = { empId };
 
       document.getElementById('bm-title').textContent = `${_tmLabel(empId)} · 휴게`;
@@ -1542,7 +1544,7 @@
       const ent = _tmEnt(BM_CTX.empId);
       const s = document.getElementById('bm-start').value;
       const e = document.getElementById('bm-end').value;
-      if (timeToMin(e) <= timeToMin(s)) { alert('휴게 종료 시각이 시작보다 늦어야 해요.'); return; }
+      if (timeToMin(e) <= timeToMin(s)) { say('휴게 종료 시각이 시작보다 늦어야 해요.'); return; }
       ent.break_start = s; ent.break_end = e; ent.breakH = breakDurH(ent);
       if (BM_CTX.empId === '__SUP__') { renderSupScope(); } else { refreshRow(BM_CTX.empId); }
       closeBreakModal();
@@ -1627,10 +1629,10 @@
     }
     function confirmAddEmployee() {
       const name = document.getElementById('add-name').value.trim();
-      if (!name) { alert('이름을 입력해주세요'); return; }
-      if (!AM_CTX.grade) { alert('직급을 선택해주세요'); return; }
+      if (!name) { say('이름을 입력해주세요'); return; }
+      if (!AM_CTX.grade) { say('직급을 선택해주세요'); return; }
       if (AM_CTX.grade === 'Crew' && (!AM_CTX.crew_rate || AM_CTX.crew_rate <= 0)) {
-        alert('Crew 시급을 입력해주세요'); return;
+        say('Crew 시급을 입력해주세요'); return;
       }
 
       // 임시 ID로 newEmployees에 추가
@@ -1655,7 +1657,7 @@
         return ent?.on && (!ent.in || !ent.out);
       });
       if (incomplete.length > 0) {
-        alert(`⚠️ 다음 직원의 출퇴근 시간을 입력해주세요:\n\n` +
+        say(`⚠️ 다음 직원의 출퇴근 시간을 입력해주세요:\n\n` +
               incomplete.map(e => `• ${e.name} (${e.grade})`).join('\n'));
         return;
       }
@@ -1715,7 +1717,7 @@
           }
         } catch (e) {}
       } else {
-        alert('저장 데이터:\n' + JSON.stringify(payload, null, 2));
+        say('저장 데이터:\n' + JSON.stringify(payload, null, 2));
       }
     }
 
