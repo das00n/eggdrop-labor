@@ -271,6 +271,7 @@
       display: flex; align-items: center; justify-content: center;
     }
     .quick-chip:active, .quick-chip.selected { background: var(--btn); color: var(--btn-text); }
+    .quick-chip.disabled { opacity: .35; pointer-events: none; }
 
     /* Time picker (시:분 select) */
     .time-picker {
@@ -1384,47 +1385,72 @@
     }
     function openTimeModal(empId, field) {
       const ent = _tmEnt(empId);
-      TM_CTX = { empId, field, current: ent[field] || '09:00' };
+      TM_CTX = { empId, field, current: ent[field] || '09:00',
+                 minMin: (field === 'out' && ent.in) ? timeToMin(ent.in) : null };
+      // 퇴근은 출근보다 늦게만 — 기본값이 제약 위반이면 보정
+      if (TM_CTX.minMin !== null && timeToMin(TM_CTX.current) <= TM_CTX.minMin) {
+        TM_CTX.current = minToTime(Math.min(TM_CTX.minMin + 60, 1440));
+      }
 
       document.getElementById('tm-title').textContent = `${_tmLabel(empId)} · ${field === 'in' ? '출근' : '퇴근'} 시각`;
       document.getElementById('tm-sub').textContent = `현재: ${ent[field] || '미설정'}`;
 
-      // quick chips
+      // quick chips (출근보다 이른 시간은 흐릿+비활성)
       const chips = document.getElementById('tm-chips');
       chips.innerHTML = '';
       QUICK_TIMES.forEach(t => {
         const chip = document.createElement('div');
         chip.className = 'quick-chip';
         chip.textContent = t;
-        chip.onclick = () => { TM_CTX.current = t; renderTMSelects(); markSelected(chips, chip); };
+        if (TM_CTX.minMin !== null && timeToMin(t) <= TM_CTX.minMin) {
+          chip.classList.add('disabled');
+        } else {
+          chip.onclick = () => { TM_CTX.current = t; renderTMSelects(); markSelected(chips, chip); };
+        }
         chips.appendChild(chip);
       });
 
-      // hour/min selects
+      // hour select (출근 이전 시는 비활성)
       const hourSel = document.getElementById('tm-hour');
       const minSel = document.getElementById('tm-min');
       hourSel.innerHTML = '';
       for (let h = 0; h <= 24; h++) {
         const opt = document.createElement('option');
         opt.value = String(h).padStart(2,'0'); opt.textContent = String(h).padStart(2,'0');
+        if (TM_CTX.minMin !== null && h * 60 + 45 <= TM_CTX.minMin) opt.disabled = true;
         hourSel.appendChild(opt);
       }
-      minSel.innerHTML = '';
-      [0, 15, 30, 45].forEach(m => {
-        const opt = document.createElement('option');
-        opt.value = String(m).padStart(2,'0'); opt.textContent = String(m).padStart(2,'0');
-        minSel.appendChild(opt);
-      });
-      hourSel.onchange = minSel.onchange = () => {
+      hourSel.onchange = () => {
+        buildTMMins();
+        const cur = minSel.options[minSel.selectedIndex];
+        if (cur && cur.disabled) {
+          const ok = Array.from(minSel.options).find(o => !o.disabled);
+          if (ok) minSel.value = ok.value;
+        }
         TM_CTX.current = `${hourSel.value}:${minSel.value}`;
       };
+      minSel.onchange = () => { TM_CTX.current = `${hourSel.value}:${minSel.value}`; };
 
       renderTMSelects();
       document.getElementById('time-modal').classList.add('show');
     }
+    // 분 옵션 생성(선택된 시 기준, 출근 이전 분은 비활성)
+    function buildTMMins() {
+      const hourSel = document.getElementById('tm-hour');
+      const minSel = document.getElementById('tm-min');
+      const curH = parseInt(hourSel.value, 10);
+      minSel.innerHTML = '';
+      [0, 15, 30, 45].forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = String(m).padStart(2,'0'); opt.textContent = String(m).padStart(2,'0');
+        if (TM_CTX && TM_CTX.minMin !== null && curH * 60 + m <= TM_CTX.minMin) opt.disabled = true;
+        minSel.appendChild(opt);
+      });
+    }
     function renderTMSelects() {
       const [h, m] = TM_CTX.current.split(':');
       document.getElementById('tm-hour').value = h;
+      buildTMMins();
       document.getElementById('tm-min').value = m;
     }
     function markSelected(container, el) {
