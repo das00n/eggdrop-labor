@@ -1664,6 +1664,9 @@
       const payload = {
         store: STATE.store,
         date: STATE.date,
+        // 충돌 감지(저장 시 봇이 DB 재지문과 비교) — 미니앱을 연 시점의 이 날짜 지문.
+        // prev_versions에 없는 날짜(=당시 데이터 없음)는 'EMPTY' 센티널(봇과 합의).
+        base_version: (STATE.prev_versions || {})[STATE.date] ?? 'EMPTY',
         deleted_employees: STATE.deletedEmployees.slice(), // 삭제 처리 대상 직원ID list
         entries: [],
         support_entries: STATE.supportEntries.slice(),     // [{direction, other_store, name, grade, hours, mode}]
