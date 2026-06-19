@@ -137,7 +137,7 @@
 
     /* 시간 chip 행 */
     .emp-time-row {
-      display: grid; grid-template-columns: 1fr 1fr auto auto auto;
+      display: grid; grid-template-columns: 1fr 1fr auto auto;
       gap: 8px; align-items: center;
     }
     .time-chip, .break-chip {
@@ -154,8 +154,14 @@
     .time-chip .empty { color: var(--hint); font-weight: 400; }
 
     .break-chip { background: rgba(255,149,0,0.15); color: #ff9500; }
-    .half-chip { background: rgba(88,86,214,0.12); color: #5856d6; }
-    .half-chip.active { background: rgba(88,86,214,0.28); font-weight: 700; }
+    .half-row { display: flex; margin-top: 8px; }
+    .half-chip {
+      padding: 7px 16px; border-radius: 8px; font-size: 13px; font-weight: 600;
+      white-space: nowrap; cursor: pointer; user-select: none;
+      display: inline-flex; align-items: center; gap: 4px;
+      background: rgba(88,86,214,0.12); color: #5856d6; border: 1px solid rgba(88,86,214,0.35);
+    }
+    .half-chip.active { background: #5856d6; color: #fff; border-color: #5856d6; }
     .work-hours {
       padding: 8px 10px; font-size: 14px; font-weight: 600;
       color: var(--accent); white-space: nowrap;
@@ -897,7 +903,7 @@
 
     function openSupportModal() {
       SUP_CTX = { direction: null, other_store: '', name: '', grade: null,
-                  in: null, out: null, breakH: 0, break_start: null, break_end: null, hours: 0 };
+                  in: null, out: null, breakH: 0, break_start: null, break_end: null, hours: 0, half: false };
       document.getElementById('sup-name').value = '';
       document.getElementById('sup-info').textContent = '';
       document.getElementById('sup-suggest').style.display = 'none';
@@ -1025,7 +1031,13 @@
           <div class="break-chip" onclick="openBreakModal('__SUP__')">${breakLabel}</div>
           <div class="work-hours">${workStr}</div>
         </div>
+        ${SUP_CTX.grade !== 'Crew' ? `<div class="half-row"><div class="half-chip${SUP_CTX.half ? ' active' : ''}" onclick="toggleSupHalf()">${SUP_CTX.half ? '✓ 반차 (0.5일)' : '☐ 반차 (절반 근무)'}</div></div>` : ''}
       `;
+    }
+
+    function toggleSupHalf() {
+      SUP_CTX.half = !SUP_CTX.half;
+      renderSupScope();
     }
 
     function confirmSupport() {
@@ -1042,6 +1054,7 @@
         other_store: SUP_CTX.other_store,
         name: SUP_CTX.name,
         grade: SUP_CTX.grade,
+        half_day: SUP_CTX.grade !== 'Crew' ? !!SUP_CTX.half : false,
         in: SUP_CTX.in,
         out: SUP_CTX.out,
         breakH: SUP_CTX.breakH,
@@ -1233,9 +1246,9 @@
               <span class="${ent.out ? '' : 'empty'}">${ent.out || '--:--'}</span>
             </div>
             <div class="break-chip" onclick="openBreakModal('${emp.id}')">${ent.break_start && ent.break_end ? `휴게 ${ent.break_start}~${ent.break_end}` : '휴게 없음'}</div>
-            ${emp.grade !== 'Crew' ? `<div class="half-chip${ent.half ? ' active' : ''}" onclick="toggleHalf('${emp.id}')">${ent.half ? '✓ 반차' : '반차'}</div>` : ''}
             <div class="work-hours ${incomplete ? 'warn' : ''}">${workStr}</div>
           </div>
+          ${emp.grade !== 'Crew' ? `<div class="half-row"><div class="half-chip${ent.half ? ' active' : ''}" onclick="toggleHalf('${emp.id}')">${ent.half ? '✓ 반차 (0.5일)' : '☐ 반차 (절반 근무)'}</div></div>` : ''}
         ` : `
           <div class="emp-time-row">
             <div class="off-label">휴무 · 토글 ON으로 변경</div>
