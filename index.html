@@ -137,7 +137,7 @@
 
     /* 시간 chip 행 */
     .emp-time-row {
-      display: grid; grid-template-columns: 1fr 1fr auto auto;
+      display: grid; grid-template-columns: 1fr 1fr auto auto auto;
       gap: 8px; align-items: center;
     }
     .time-chip, .break-chip {
@@ -154,6 +154,8 @@
     .time-chip .empty { color: var(--hint); font-weight: 400; }
 
     .break-chip { background: rgba(255,149,0,0.15); color: #ff9500; }
+    .half-chip { background: rgba(88,86,214,0.12); color: #5856d6; }
+    .half-chip.active { background: rgba(88,86,214,0.28); font-weight: 700; }
     .work-hours {
       padding: 8px 10px; font-size: 14px; font-weight: 600;
       color: var(--accent); white-space: nowrap;
@@ -403,14 +405,6 @@
     .sup-scope-pick {
       display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;
     }
-    .sup-scope-chip {
-      padding: 12px; border-radius: 10px; background: var(--secondary-bg);
-      font-size: 14px; font-weight: 600; text-align: center; cursor: pointer; min-height: 44px;
-      display: flex; align-items: center; justify-content: center;
-      border: 2px solid transparent;
-    }
-    .sup-scope-chip.selected { background: var(--btn); color: var(--btn-text); border-color: var(--btn); }
-
     .sup-name-suggest {
       max-height: 180px; overflow-y: auto;
       background: var(--secondary-bg); border-radius: 10px; margin-top: 4px;
@@ -787,11 +781,12 @@
             breakH: emp.prev.breakH || 0,
             break_start: emp.prev.break_start || null,
             break_end: emp.prev.break_end || null,
+            half: !!emp.prev.half,
             on: true,
           };
           syncBreak(STATE.entries[emp.id]);
         } else {
-          STATE.entries[emp.id] = { in: null, out: null, breakH: 0, break_start: null, break_end: null, on: false };
+          STATE.entries[emp.id] = { in: null, out: null, breakH: 0, break_start: null, break_end: null, half: false, on: false };
         }
       });
 
@@ -872,12 +867,12 @@
         const dirText = s.direction === 'in' ? '⬅ 왔음' : '➡ 갔음';
         r.className = 'support-row dir-' + s.direction;
         const tag = s.direction === 'in' ? 'in' : 'out';
-        const scopeText = s.grade === 'Crew' ? `${s.hours}h` : (s.mode === 'half' ? '반일' : '종일');
+        const timeWindow = (s.in && s.out) ? `${s.in}~${s.out}` : `${(s.hours || 0).toFixed(1)}h`;
         r.innerHTML = `
           <span class="support-tag ${tag}">${dirText}</span>
           <div class="support-info">
             <div class="name">${s.name} <span class="emp-grade ${s.grade}" style="font-size:10px">${s.grade}</span></div>
-            <div class="meta">${s.other_store} · ${scopeText} (${s.hours.toFixed(1)}h)</div>
+            <div class="meta">${s.other_store} · ${timeWindow} (${(s.hours || 0).toFixed(1)}h)</div>
           </div>
           <button class="support-delete" onclick="removeSupport(${idx})">삭제</button>
         `;
@@ -895,10 +890,11 @@
     }
 
     // ───────── 지원 modal ─────────
-    let SUP_CTX = null;  // {direction, other_store, name, grade, hours, mode}
+    let SUP_CTX = null;  // {direction, other_store, name, grade, in, out, breakH, break_start, break_end, hours}
 
     function openSupportModal() {
-      SUP_CTX = { direction: null, other_store: '', name: '', grade: null, hours: 0, mode: 'full' };
+      SUP_CTX = { direction: null, other_store: '', name: '', grade: null,
+                  in: null, out: null, breakH: 0, break_start: null, break_end: null, hours: 0 };
       document.getElementById('sup-name').value = '';
       document.getElementById('sup-info').textContent = '';
       document.getElementById('sup-suggest').style.display = 'none';
@@ -1001,37 +997,32 @@
       const label = document.getElementById('sup-scope-label');
       if (!SUP_CTX.grade) {
         area.innerHTML = '<div style="color:var(--hint);font-size:13px;padding:8px">직급 선택 후 표시됨</div>';
-        label.textContent = '근무 시간';
+        label.textContent = '출퇴근 시각';
         return;
       }
-      const sdh = STATE.support_daily_hours || {};
-      if (SUP_CTX.grade === 'Crew') {
-        label.textContent = 'Crew 근무 시간';
-        area.innerHTML = `
-          <input class="form-input" type="number" step="0.5" min="0" max="24"
-                 value="${SUP_CTX.hours || ''}" placeholder="시간"
-                 oninput="supSetHours(this.value)">
-        `;
-      } else {
-        const full = sdh[SUP_CTX.grade] || 8;
-        const half = full / 2;
-        // 자동 hours 동기화
-        if (!SUP_CTX.mode) SUP_CTX.mode = 'full';
-        SUP_CTX.hours = SUP_CTX.mode === 'half' ? half : full;
-        label.textContent = `${SUP_CTX.grade} 종일/반일 (종일 ${full}h)`;
-        area.innerHTML = `
-          <div class="sup-scope-chip ${SUP_CTX.mode==='full'?'selected':''}" onclick="supSetMode('full')">종일 (${full}h)</div>
-          <div class="sup-scope-chip ${SUP_CTX.mode==='half'?'selected':''}" onclick="supSetMode('half')">반일 (${half}h)</div>
-        `;
-      }
-    }
-
-    function supSetMode(mode) {
-      SUP_CTX.mode = mode;
-      renderSupScope();
-    }
-    function supSetHours(v) {
-      SUP_CTX.hours = parseFloat(v) || 0;
+      label.textContent = '출퇴근 시각';
+      // hours를 in/out/breakH로부터 실시간 계산
+      SUP_CTX.hours = calcWork(SUP_CTX.in, SUP_CTX.out, SUP_CTX.breakH);
+      const workStr = (SUP_CTX.in && SUP_CTX.out)
+        ? `${SUP_CTX.hours.toFixed(1)}h`
+        : '--';
+      const breakLabel = (SUP_CTX.break_start && SUP_CTX.break_end)
+        ? `휴게 ${SUP_CTX.break_start}~${SUP_CTX.break_end}`
+        : '휴게 없음';
+      area.innerHTML = `
+        <div class="emp-time-row">
+          <div class="time-chip" onclick="openTimeModal('__SUP__', 'in')">
+            <span class="label">출</span>
+            <span class="${SUP_CTX.in ? '' : 'empty'}">${SUP_CTX.in || '--:--'}</span>
+          </div>
+          <div class="time-chip" onclick="openTimeModal('__SUP__', 'out')">
+            <span class="label">퇴</span>
+            <span class="${SUP_CTX.out ? '' : 'empty'}">${SUP_CTX.out || '--:--'}</span>
+          </div>
+          <div class="break-chip" onclick="openBreakModal('__SUP__')">${breakLabel}</div>
+          <div class="work-hours">${workStr}</div>
+        </div>
+      `;
     }
 
     function confirmSupport() {
@@ -1039,14 +1030,21 @@
       if (!SUP_CTX.other_store) { alert('상대 매장을 선택해주세요'); return; }
       if (!SUP_CTX.name) { alert('직원 이름을 입력해주세요'); return; }
       if (!SUP_CTX.grade) { alert('직급을 선택해주세요'); return; }
-      if (!SUP_CTX.hours || SUP_CTX.hours <= 0) { alert('근무 시간을 입력해주세요'); return; }
+      if (!SUP_CTX.in) { alert('출근 시각을 입력해주세요'); return; }
+      if (!SUP_CTX.out) { alert('퇴근 시각을 입력해주세요'); return; }
+      SUP_CTX.hours = calcWork(SUP_CTX.in, SUP_CTX.out, SUP_CTX.breakH);
+      if (SUP_CTX.hours <= 0) { alert('출퇴근 시각을 확인해주세요 (근무 시간이 0입니다)'); return; }
       STATE.supportEntries.push({
         direction: SUP_CTX.direction,
         other_store: SUP_CTX.other_store,
         name: SUP_CTX.name,
         grade: SUP_CTX.grade,
+        in: SUP_CTX.in,
+        out: SUP_CTX.out,
+        breakH: SUP_CTX.breakH,
+        break_start: SUP_CTX.break_start,
+        break_end: SUP_CTX.break_end,
         hours: SUP_CTX.hours,
-        mode: SUP_CTX.grade === 'Crew' ? null : SUP_CTX.mode,
       });
       closeSupportModal();
       renderMain();
@@ -1133,6 +1131,7 @@
             breakH: p.breakH || 0,
             break_start: p.break_start || null,
             break_end: p.break_end || null,
+            half: !!p.half,
             on: true,
           };
           syncBreak(STATE.entries[emp.id]);
@@ -1231,6 +1230,7 @@
               <span class="${ent.out ? '' : 'empty'}">${ent.out || '--:--'}</span>
             </div>
             <div class="break-chip" onclick="openBreakModal('${emp.id}')">${ent.break_start && ent.break_end ? `휴게 ${ent.break_start}~${ent.break_end}` : '휴게 없음'}</div>
+            ${emp.grade !== 'Crew' ? `<div class="half-chip${ent.half ? ' active' : ''}" onclick="toggleHalf('${emp.id}')">${ent.half ? '✓ 반차' : '반차'}</div>` : ''}
             <div class="work-hours ${incomplete ? 'warn' : ''}">${workStr}</div>
           </div>
         ` : `
@@ -1362,14 +1362,29 @@
       scrollToEl('emp-row-' + empId);
     }
 
-    // ───────── 출/퇴근 picker modal ─────────
-    const QUICK_TIMES = ['06:30','09:00','10:00','11:00','13:00','17:00','22:00','24:00'];
-    function openTimeModal(empId, field) {
+    // ───────── 반차 토글 ─────────
+    function toggleHalf(empId) {
       const ent = STATE.entries[empId];
+      ent.half = !ent.half;
+      refreshRow(empId);
+    }
+
+    // ───────── 출/퇴근 picker modal ─────────
+    // empId === '__SUP__' 이면 SUP_CTX를 대상으로 동작 (지원 근무 시각 입력 공유)
+    const QUICK_TIMES = ['06:30','09:00','10:00','11:00','13:00','17:00','22:00','24:00'];
+    function _tmEnt(empId) {
+      return empId === '__SUP__' ? SUP_CTX : STATE.entries[empId];
+    }
+    function _tmLabel(empId) {
+      if (empId === '__SUP__') return SUP_CTX.name || '지원 직원';
       const emp = STATE.employees.find(e => e.id === empId) || STATE.newEmployees.find(e => e.id === empId);
+      return emp ? emp.name : empId;
+    }
+    function openTimeModal(empId, field) {
+      const ent = _tmEnt(empId);
       TM_CTX = { empId, field, current: ent[field] || '09:00' };
 
-      document.getElementById('tm-title').textContent = `${emp.name} · ${field === 'in' ? '출근' : '퇴근'} 시각`;
+      document.getElementById('tm-title').textContent = `${_tmLabel(empId)} · ${field === 'in' ? '출근' : '퇴근'} 시각`;
       document.getElementById('tm-sub').textContent = `현재: ${ent[field] || '미설정'}`;
 
       // quick chips
@@ -1422,28 +1437,34 @@
     const GRADE_OUT_HOURS = { SV: 11, SM: 11, AM: 10, Pro: 9 };
     function confirmTimeModal() {
       if (!TM_CTX) return;
-      STATE.entries[TM_CTX.empId][TM_CTX.field] = TM_CTX.current;
-      const ent = STATE.entries[TM_CTX.empId];
-      // 출근(in) 입력 → 직급별 퇴근 자동(이후 퇴근 수동 조정 가능)
-      if (TM_CTX.field === 'in' && ent.in) {
-        const emp = STATE.employees.find(e => e.id === TM_CTX.empId) || STATE.newEmployees.find(e => e.id === TM_CTX.empId);
-        const gh = GRADE_OUT_HOURS[emp && emp.grade];
-        if (gh) ent.out = minToTime(timeToMin(ent.in) + gh * 60);
+      const ent = _tmEnt(TM_CTX.empId);
+      ent[TM_CTX.field] = TM_CTX.current;
+      if (TM_CTX.empId === '__SUP__') {
+        // 지원: 출근 입력 시 퇴근 자동 없음(직급별 hours 개념 없음); 휴게 동기화만
+        if (ent.in && ent.out) syncBreak(ent);
+        renderSupScope();
+      } else {
+        // 출근(in) 입력 → 직급별 퇴근 자동(이후 퇴근 수동 조정 가능)
+        if (TM_CTX.field === 'in' && ent.in) {
+          const emp = STATE.employees.find(e => e.id === TM_CTX.empId) || STATE.newEmployees.find(e => e.id === TM_CTX.empId);
+          const gh = GRADE_OUT_HOURS[emp && emp.grade];
+          if (gh) ent.out = minToTime(timeToMin(ent.in) + gh * 60);
+        }
+        // 근무시간 바뀌면 휴게 구간 동기화(근무 밖이면 자동 구간으로)
+        if (ent.in && ent.out) syncBreak(ent);
+        refreshRow(TM_CTX.empId);
       }
-      // 근무시간 바뀌면 휴게 구간 동기화(근무 밖이면 자동 구간으로)
-      if (ent.in && ent.out) syncBreak(ent);
-      refreshRow(TM_CTX.empId);
       closeTimeModal();
     }
 
     // ───────── 휴게 picker modal (시간 구간) ─────────
+    // empId === '__SUP__' 이면 SUP_CTX를 대상으로 동작
     function openBreakModal(empId) {
-      const ent = STATE.entries[empId];
+      const ent = _tmEnt(empId);
       if (!ent.in || !ent.out) { alert('근무 시간(출근·퇴근)을 먼저 입력해주세요.'); return; }
-      const emp = STATE.employees.find(e => e.id === empId) || STATE.newEmployees.find(e => e.id === empId);
       BM_CTX = { empId };
 
-      document.getElementById('bm-title').textContent = `${emp.name} · 휴게`;
+      document.getElementById('bm-title').textContent = `${_tmLabel(empId)} · 휴게`;
       document.getElementById('bm-sub').textContent = `근무 ${ent.in}~${ent.out} 안에서 선택`;
 
       const times = gridTimes(ent.in, ent.out);
@@ -1467,18 +1488,18 @@
     }
     function confirmBreakModal() {
       if (!BM_CTX) return;
-      const ent = STATE.entries[BM_CTX.empId];
+      const ent = _tmEnt(BM_CTX.empId);
       const s = document.getElementById('bm-start').value;
       const e = document.getElementById('bm-end').value;
       if (timeToMin(e) <= timeToMin(s)) { alert('휴게 종료 시각이 시작보다 늦어야 해요.'); return; }
       ent.break_start = s; ent.break_end = e; ent.breakH = breakDurH(ent);
-      refreshRow(BM_CTX.empId);
+      if (BM_CTX.empId === '__SUP__') { renderSupScope(); } else { refreshRow(BM_CTX.empId); }
       closeBreakModal();
     }
     // 휴게 시작 선택 시 종료를 자동(+근무길이별: 8h↑ 1시간 / 4h↑ 30분)으로 채움. 이후 종료 수동 조정 가능.
     function bmStartChanged() {
       if (!BM_CTX) return;
-      const ent = STATE.entries[BM_CTX.empId];
+      const ent = _tmEnt(BM_CTX.empId);
       const a = timeToMin(ent.in), b0 = timeToMin(ent.out);
       if (a == null || b0 == null) return;
       const b = b0 > a ? b0 : b0 + 1440;
@@ -1494,9 +1515,9 @@
     }
     function confirmBreakNone() {
       if (!BM_CTX) return;
-      const ent = STATE.entries[BM_CTX.empId];
+      const ent = _tmEnt(BM_CTX.empId);
       ent.break_start = null; ent.break_end = null; ent.breakH = 0;
-      refreshRow(BM_CTX.empId);
+      if (BM_CTX.empId === '__SUP__') { renderSupScope(); } else { refreshRow(BM_CTX.empId); }
       closeBreakModal();
     }
 
@@ -1569,7 +1590,7 @@
       };
       STATE.newEmployees.push(newEmp);
       STATE.employees.push(newEmp);
-      STATE.entries[tempId] = { in: '09:00', out: '18:00', breakH: 1.0, break_start: '13:30', break_end: '14:30', on: true };
+      STATE.entries[tempId] = { in: '09:00', out: '18:00', breakH: 1.0, break_start: '13:30', break_end: '14:30', half: false, on: true };
 
       closeAddModal();
       scrollToEl('emp-row-' + tempId);  // 추가된 직원 행으로 자동 스크롤
@@ -1616,6 +1637,7 @@
           break_start: on ? (ent.break_start || null) : null,
           break_end: on ? (ent.break_end || null) : null,
           hours: work,
+          half_day: on ? !!ent.half : false,
         };
         // Crew 시급 변경분 전달 (개인별)
         if (emp.grade === 'Crew' && STATE.crewRateChanges[emp.id]) {
