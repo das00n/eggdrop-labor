@@ -1440,6 +1440,16 @@
     function confirmTimeModal() {
       if (!TM_CTX) return;
       const ent = _tmEnt(TM_CTX.empId);
+      // 자정 넘는 근무 없음 — 퇴근은 출근보다 늦게만(역전 입력 차단)
+      const _v = timeToMin(TM_CTX.current);
+      if (TM_CTX.field === 'out' && ent.in && _v <= timeToMin(ent.in)) {
+        alert('퇴근 시각은 출근 시각보다 늦어야 합니다.\n(자정을 넘기는 근무는 입력하지 않습니다)');
+        return;
+      }
+      if (TM_CTX.field === 'in' && TM_CTX.empId === '__SUP__' && ent.out && _v >= timeToMin(ent.out)) {
+        alert('출근 시각은 퇴근 시각보다 일러야 합니다.');
+        return;
+      }
       ent[TM_CTX.field] = TM_CTX.current;
       if (TM_CTX.empId === '__SUP__') {
         // 지원: 출근 입력 시 퇴근 자동 없음(직급별 hours 개념 없음); 휴게 동기화만
