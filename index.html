@@ -225,6 +225,8 @@
       z-index: 30; display: none; align-items: flex-end;
     }
     .modal-backdrop.show { display: flex; }
+    /* 시각/휴게 모달은 지원 모달(30) 위에서 열리므로 더 높게 (nested modal 스태킹) */
+    #time-modal, #break-modal { z-index: 40; }
     .modal {
       width: 100%; background: var(--section-bg);
       border-radius: 16px 16px 0 0; padding: 20px 16px env(safe-area-inset-bottom);
