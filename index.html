@@ -440,6 +440,13 @@
     .date-cell.selected { background: var(--btn); color: var(--btn-text); }
     .date-cell.today { border: 2px solid var(--btn); }
     .date-cell.empty { background: transparent; cursor: default; }
+    .date-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+    .date-nav-btn {
+      width: 36px; height: 36px; flex: none; border: none; border-radius: 8px;
+      background: var(--secondary-bg); color: var(--text); font-size: 20px; font-weight: 700;
+      cursor: pointer; line-height: 1;
+    }
+    .date-nav-btn:disabled { opacity: 0.3; cursor: default; }
 
     .header-date {
       cursor: pointer; display: inline-block;
@@ -599,8 +606,12 @@
   <!-- ───────── 날짜 변경 Modal ───────── -->
   <div class="modal-backdrop" id="date-modal">
     <div class="modal">
-      <h2 class="modal-title" id="date-modal-title">📅 날짜 선택</h2>
-      <p class="modal-sub">해당 월의 다른 날짜를 선택할 수 있습니다 (과거/미래 모두 가능)</p>
+      <div class="date-nav">
+        <button type="button" class="date-nav-btn" id="date-prev" onclick="navMonth(-1)">‹</button>
+        <h2 class="modal-title" id="date-modal-title" style="margin:0;">📅 날짜 선택</h2>
+        <button type="button" class="date-nav-btn" id="date-next" onclick="navMonth(1)">›</button>
+      </div>
+      <p class="modal-sub">당월~다음달 스케줄을 입력할 수 있습니다</p>
 
       <div class="date-grid" id="date-grid"></div>
 
@@ -1168,20 +1179,42 @@
     }
 
     // ───────── 날짜 picker modal ─────────
+    let CAL_Y, CAL_M;  // 현재 보고 있는 달력의 연/월
+    function _monthBounds() {
+      // 입력 가능 범위: 당월 ~ 다음달 (과거 월은 prev 미로드라 저장 시 삭제 위험 → 차단)
+      const t = new Date();
+      const minIdx = t.getFullYear() * 12 + t.getMonth();
+      return { minIdx, maxIdx: minIdx + 1 };
+    }
     function openDateModal() {
       const d = new Date(STATE.date);
-      const y = d.getFullYear(), m = d.getMonth();
+      CAL_Y = d.getFullYear(); CAL_M = d.getMonth();
+      renderDateGrid();
+      document.getElementById('date-modal').classList.add('show');
+    }
+    function navMonth(delta) {
+      const { minIdx, maxIdx } = _monthBounds();
+      const idx = CAL_Y * 12 + CAL_M + delta;
+      if (idx < minIdx || idx > maxIdx) return;
+      CAL_Y = Math.floor(idx / 12); CAL_M = idx % 12;
+      renderDateGrid();
+    }
+    function renderDateGrid() {
+      const y = CAL_Y, m = CAL_M;
       const first = new Date(y, m, 1);
       const last = new Date(y, m + 1, 0);
       const todayStr = new Date().toISOString().split('T')[0];
-      document.getElementById('date-modal-title').textContent =
-        `📅 ${y}년 ${m+1}월 — 날짜 선택`;
+      document.getElementById('date-modal-title').textContent = `${y}년 ${m+1}월`;
+      const { minIdx, maxIdx } = _monthBounds();
+      const idx = y * 12 + m;
+      document.getElementById('date-prev').disabled = (idx <= minIdx);
+      document.getElementById('date-next').disabled = (idx >= maxIdx);
       const grid = document.getElementById('date-grid');
       grid.innerHTML = '';
-      ['일','월','화','수','목','금','토'].forEach(d => {
+      ['일','월','화','수','목','금','토'].forEach(dn => {
         const c = document.createElement('div');
         c.className = 'date-cell dow';
-        c.textContent = d;
+        c.textContent = dn;
         grid.appendChild(c);
       });
       // 첫 주 빈칸
@@ -1200,7 +1233,6 @@
         c.onclick = () => pickDate(dateStr);
         grid.appendChild(c);
       }
-      document.getElementById('date-modal').classList.add('show');
     }
 
     function closeDateModal() {
