@@ -1181,10 +1181,12 @@
     // ───────── 날짜 picker modal ─────────
     let CAL_Y, CAL_M;  // 현재 보고 있는 달력의 연/월
     function _monthBounds() {
-      // 입력 가능 범위: 당월 ~ 다음달 (과거 월은 prev 미로드라 저장 시 삭제 위험 → 차단)
+      // 입력 가능 범위: (매월 3일까지는 전월부터) 당월 ~ 다음달.
+      // 봇 prev도 _prev_window_start로 동일하게 전월까지 로드해야 안전(빈 화면 저장이 전월 삭제 방지).
       const t = new Date();
-      const minIdx = t.getFullYear() * 12 + t.getMonth();
-      return { minIdx, maxIdx: minIdx + 1 };
+      const cur = t.getFullYear() * 12 + t.getMonth();
+      const minIdx = cur - (t.getDate() <= 3 ? 1 : 0);
+      return { minIdx, maxIdx: cur + 1 };
     }
     function openDateModal() {
       const d = new Date(STATE.date);
