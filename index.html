@@ -83,6 +83,18 @@
     }
     .emp-row.deleting { opacity: 0.4; text-decoration: line-through; background: rgba(0,0,0,0.04); }
     .work-hours.warn { color: var(--destructive); font-weight: 700; }
+    /* 근무시간 상·하한 확인(경고 전용 — 차단 아님). 오류(빨강)와 구분되게 앰버 톤. */
+    .hour-check {
+      margin-top: 6px;
+      font-size: 12px;
+      line-height: 1.4;
+      color: #8a6d00;
+      background: rgba(255, 204, 0, 0.12);
+      border: 1px solid rgba(255, 204, 0, 0.38);
+      border-radius: 8px;
+      padding: 5px 9px;
+    }
+    .sum-hour-check { color: #c99a00; }
 
     /* 행 단위 삭제 버튼 */
     .row-delete {
@@ -1311,6 +1323,7 @@
     function renderEmpRow(emp) {
       const ent = STATE.entries[emp.id];
       const isDeleting = STATE.deletedEmployees.includes(emp.id);
+      const hourWarn = isDeleting ? null : gradeHourWarning(emp);
       const row = document.createElement('div');
       const incomplete = !isDeleting && ent.on && (!ent.in || !ent.out);
       row.className = 'emp-row'
@@ -1364,6 +1377,7 @@
             <div class="work-hours ${incomplete ? 'warn' : ''}">${workStr}</div>
           </div>
           ${emp.grade !== 'Crew' ? `<div class="half-row"><div class="half-chip${ent.half ? ' active' : ''}" onclick="toggleHalf('${emp.id}')">${ent.half ? '✓ 반차 (0.5일)' : '☐ 반차 (절반 근무)'}</div></div>` : ''}
+          ${hourWarn ? `<div class="hour-check">🔎 근무 ${hourWarn.total}h · ${emp.grade} ${hourWarn.kind === 'over' ? `상한 ${hourWarn.limit}h 초과` : `${hourWarn.half ? '반차' : '종일'} 기준 ${hourWarn.limit}h 미만`} — 한 번 더 확인해주세요</div>` : ''}
         ` : `
           <div class="emp-time-row">
             <div class="off-label">휴무 · 토글 ON으로 변경</div>
@@ -1458,6 +1472,66 @@
       updateSummary();
     }
 
+    // ───────── 근무시간 상·하한 확인(경고 전용) ─────────
+    // Crew(시급직)는 유동적이라 제외. 초과·과소 모두 저장을 막지 않고 "한 번 더 확인" 안내만.
+    const HOUR_LIMITS = {
+      over:      { SV: 10,  SM: 10,  AM: 9,   Pro: 8 },  // 합산이 이 값을 '초과'하면 확인
+      under:     { SV: 9,   SM: 9,   AM: 9,   Pro: 8 },  // 종일 근무인데 이 값 '미만'이면 확인
+      underHalf: { SV: 4.5, SM: 4.5, AM: 4.5, Pro: 4 },  // 반차인데 이 값 '미만'이면 확인
+    };
+
+    // 그 직원의 그날 합산 근무시간(자체 근무 + 본인이 나간 '갔음' 지원), 휴게 제외.
+    function dayHoursFor(emp) {
+      const ent = STATE.entries[emp.id] || {};
+      const incomplete = ent.on && (!ent.in || !ent.out);
+      let total = (ent.on && !incomplete) ? calcWork(ent.in, ent.out, ent.breakH) : 0;
+      let on = !!ent.on, half = ent.on ? !!ent.half : false;
+      const hasSelf = !!ent.on;
+      // 본인이 타매장으로 나간 지원분 합산 (이름 일치)
+      (STATE.supportEntries || []).forEach(s => {
+        if (s.direction === 'out' && s.name === emp.name) {
+          total += (s.hours || 0);
+          on = true;
+          if (!hasSelf) half = !!s.half_day;
+        }
+      });
+      return { total: +total.toFixed(2), on, half, incomplete };
+    }
+
+    // 상·하한 밴드를 벗어나면 경고 객체, 아니면 null. (Crew·휴무·시간미입력·삭제대기 제외)
+    function gradeHourWarning(emp) {
+      if (!emp || emp.grade === 'Crew') return null;
+      if (STATE.deletedEmployees.includes(emp.id)) return null;
+      if (!(emp.grade in HOUR_LIMITS.over)) return null;
+      const d = dayHoursFor(emp);
+      if (!d.on || d.incomplete) return null;
+      if (d.total > HOUR_LIMITS.over[emp.grade]) {
+        return { kind: 'over', total: d.total, limit: HOUR_LIMITS.over[emp.grade], half: d.half };
+      }
+      const uc = d.half ? HOUR_LIMITS.underHalf[emp.grade] : HOUR_LIMITS.under[emp.grade];
+      if (d.total < uc) {
+        return { kind: 'under', total: d.total, limit: uc, half: d.half };
+      }
+      return null;
+    }
+
+    // 요약바·저장 팝업·텔레그램 공통 확인 대상 목록.
+    function collectHourWarnings() {
+      const list = [];
+      STATE.employees.forEach(emp => {
+        const w = gradeHourWarning(emp);
+        if (w) list.push({ name: emp.name, grade: emp.grade, ...w });
+      });
+      return list;
+    }
+
+    // 사람이 읽는 한 줄 ("문제"가 아니라 "확인" 톤).
+    function hourWarnLine(w) {
+      return w.kind === 'over'
+        ? `${w.name}(${w.grade}) 합산 ${w.total}h · 상한 ${w.limit}h 초과 — 확인 부탁`
+        : `${w.name}(${w.grade}) 합산 ${w.total}h · ${w.half ? '반차' : '종일'} 기준 ${w.limit}h 미만 — 확인 부탁`;
+    }
+
     function updateSummary() {
       // 미니앱에선 시급/인건비 노출 X — 인원/시간만
       let totalH = 0, count = 0, incompleteCount = 0;
@@ -1474,7 +1548,9 @@
         sumEl.innerHTML = `<span style="color:var(--destructive)">⚠️ ${incompleteCount}명 출퇴근 시간 누락</span>`;
         if (btn) { btn.disabled = true; btn.textContent = '⚠️ 시간 입력 필요'; }
       } else {
-        sumEl.textContent = `${count}명 · ${totalH.toFixed(1)}h 근무`;
+        const warns = collectHourWarnings();
+        sumEl.innerHTML = `${count}명 · ${totalH.toFixed(1)}h 근무`
+          + (warns.length ? ` · <span class="sum-hour-check">🔎 ${warns.length}명 시간 확인</span>` : '');
         if (btn) { btn.disabled = false; btn.textContent = '💾 저장'; }
       }
     }
@@ -1815,26 +1891,48 @@
         payload.entries.push(entryObj);
       });
 
+      // 근무시간 상·하한 확인(경고 전용 — 차단 아님). 봇이 방에 그대로 안내할 수 있도록 payload에 동봉.
+      const hourWarns = collectHourWarnings();
+      payload.hour_warnings = hourWarns;  // 구조화 [{name,grade,kind,total,limit,half}]
+      payload.warning_text = hourWarns.length
+        ? '🔎 근무시간 확인 요청 (참고용 · 문제 아님):\n' + hourWarns.map(w => '• ' + hourWarnLine(w)).join('\n')
+        : '';
+
       // 디버그
       console.log('SAVE payload:', payload);
 
-      // localStorage 백업 (저장 실패 시 다음 진입 복원)
-      try {
-        localStorage.setItem(`labor_backup_${STATE.store}_${STATE.date}`, JSON.stringify(payload));
-      } catch (e) {}
-
-      if (tg) {
-        tg.sendData(JSON.stringify(payload));
-        // sendData 호출 시 텔레그램이 미니앱을 자동 close하지만,
-        // 일부 클라이언트에서 닫히지 않는 경우 대비해 명시적으로 닫음.
+      const finalize = () => {
+        // localStorage 백업 (저장 실패 시 다음 진입 복원)
         try {
-          if (typeof tg.close === 'function') {
-            setTimeout(() => { try { tg.close(); } catch (e) {} }, 150);
-          }
+          localStorage.setItem(`labor_backup_${STATE.store}_${STATE.date}`, JSON.stringify(payload));
         } catch (e) {}
-      } else {
-        say('저장 데이터:\n' + JSON.stringify(payload, null, 2));
+
+        if (tg) {
+          tg.sendData(JSON.stringify(payload));
+          // sendData 호출 시 텔레그램이 미니앱을 자동 close하지만,
+          // 일부 클라이언트에서 닫히지 않는 경우 대비해 명시적으로 닫음.
+          try {
+            if (typeof tg.close === 'function') {
+              setTimeout(() => { try { tg.close(); } catch (e) {} }, 150);
+            }
+          } catch (e) {}
+        } else {
+          say('저장 데이터:\n' + JSON.stringify(payload, null, 2));
+        }
+      };
+
+      // 상·하한 확인 대상이 있으면 저장 직전 한 번 더 확인(경고만 — 취소 시 저장 보류)
+      if (hourWarns.length) {
+        const msg = '🔎 아래 직원 근무시간을 한 번 더 확인해주세요.\n(문제가 아니라 확인용입니다)\n\n'
+          + hourWarns.map(w => '• ' + hourWarnLine(w)).join('\n')
+          + '\n\n이대로 저장할까요?';
+        if (tg && tg.showConfirm) {
+          tg.showConfirm(msg, (ok) => { if (ok) finalize(); });
+          return;
+        }
+        if (!window.confirm(msg)) return;  // 브라우저 폴백
       }
+      finalize();
     }
 
     function showError(msg) {
