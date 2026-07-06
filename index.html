@@ -2047,9 +2047,16 @@
     }
 
     function wkSave() {
-      const dirty = wkDirtyDates();
+      let dirty = wkDirtyDates();
       if (!dirty.length) { say('변경된 날짜가 없습니다.'); return; }
       if (!tg) { say('텔레그램 환경에서만 저장할 수 있습니다.'); return; }
+      // 입력 가능 범위 가드(하루 입력 date picker와 동일 규칙): 당월~다음달, 매월 3일까지는 전월부터
+      const { minIdx, maxIdx } = _monthBounds();
+      const inRange = (d) => { const dt = new Date(d + 'T00:00:00'); const idx = dt.getFullYear() * 12 + dt.getMonth(); return idx >= minIdx && idx <= maxIdx; };
+      const blocked = dirty.filter(d => !inRange(d));
+      dirty = dirty.filter(inRange);
+      if (blocked.length && !dirty.length) { say('입력 가능 기간(당월~다음달)이 지난 날짜입니다.\n지난 스케줄은 조회만 가능해요.'); return; }
+      if (blocked.length) say(`입력 기간이 지난 ${blocked.length}일(${blocked.map(d=>d.slice(5).replace('-','/')).join(', ')})은 제외하고 저장합니다.`);
       const days = dirty.map(d => {
         const entries = STATE.employees.map(emp => {
           const e = wkEntry(d, emp.id);
@@ -2095,7 +2102,7 @@
       const emps = STATE.employees;
       const label = `${ds[0].slice(5).replace('-', '/')} ~ ${ds[6].slice(5).replace('-', '/')}`;
       let h = `<div class="av-nav"><button type="button" onclick="navWeek(-1)">‹</button><b>📆 주간표 ${label}</b><button type="button" onclick="navWeek(1)">›</button></div>`;
-      h += `<div class="av-note">저장된 스케줄 기준 (오늘 날짜는 입력 중인 값 반영) · 이번 달 데이터만 표시</div>`;
+      h += `<div class="av-note">저장된 스케줄 기준 (오늘 날짜는 입력 중인 값 반영) · 최근 3개월 조회 가능</div>`;
       h += `<div class="wk-wrap"><table class="wk"><tr><th class="dcol">날짜</th>${emps.map(e => `<th>${e.name}</th>`).join('')}<th>지원</th></tr>`;
       ds.forEach((d, i) => {
         const byId = {}; dayOwn(d).forEach(o => { byId[o.id] = o; });
