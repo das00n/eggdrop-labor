@@ -448,6 +448,25 @@
     table.hm { border-collapse: collapse; font-size: 12px; width: 100%; table-layout: fixed; font-variant-numeric: tabular-nums; }
     .hm th, .hm td { border: 1px solid rgba(0,0,0,0.08); padding: 5px 0; text-align: center; }
     .hm .hcol { width: 38px; font-size: 11px; color: var(--hint); }
+    /* 주간 입력 */
+    .wk-emp { width: 100%; padding: 10px 12px; margin: 4px 0 10px; font-size: 15px; font-weight: 600;
+              border: 1px solid rgba(0,0,0,0.15); border-radius: 10px; background: var(--section-bg); }
+    .wk-day { display: flex; align-items: center; gap: 6px; padding: 8px 6px; border-bottom: 1px solid rgba(0,0,0,0.06);
+              font-variant-numeric: tabular-nums; }
+    .wk-day.is-off { background: rgba(0,0,0,0.03); }
+    .wk-date { width: 74px; font-size: 13px; font-weight: 700; flex-shrink: 0; }
+    .wk-toggle { padding: 6px 10px; font-size: 12px; font-weight: 600; border-radius: 8px;
+                 border: 1px solid rgba(0,0,0,0.12); background: var(--section-bg); flex-shrink: 0; }
+    .wk-day.is-off .wk-toggle { color: var(--hint); }
+    .wk-chip { padding: 6px 8px; font-size: 13px; font-weight: 600; border-radius: 8px;
+               border: 1px solid rgba(0,0,0,0.12); background: var(--section-bg); font-variant-numeric: tabular-nums; }
+    .wk-break { font-size: 11px; color: var(--hint); }
+    .wk-tilde { color: var(--hint); }
+    .wk-actions { display: flex; gap: 8px; margin: 14px 0 4px; }
+    .wk-act { flex: 1; padding: 13px; font-size: 14px; font-weight: 700; border-radius: 10px;
+              border: 1px solid rgba(0,0,0,0.15); background: var(--section-bg); }
+    .wk-act.primary { background: var(--btn); color: #fff; border-color: var(--btn); }
+    .wk-act:disabled { opacity: 0.45; }
 
     /* 날짜 picker */
     .date-grid {
@@ -507,8 +526,9 @@
     <p class="h-sub" id="hdr-sub">⏳</p>
     <div class="tabbar" id="tabbar" style="display:none">
       <button type="button" class="tab is-active" data-tab="day" onclick="switchTab('day')">📝 입력</button>
+      <button type="button" class="tab" data-tab="winput" onclick="switchTab('winput')">🗓 주간입력</button>
       <button type="button" class="tab" data-tab="week" onclick="switchTab('week')">📆 주간표</button>
-      <button type="button" class="tab" data-tab="heat" onclick="switchTab('heat')">👥 시간대 인원</button>
+      <button type="button" class="tab" data-tab="heat" onclick="switchTab('heat')">👥 시간대</button>
     </div>
   </header>
 
@@ -527,7 +547,8 @@
     <div class="loading" id="loading">⏳ 직원 정보 불러오는 중...</div>
   </main>
 
-  <!-- 주간표 / 시간대 인원 — 읽기 뷰 (탭 전환, 저장된 스케줄 기준) -->
+  <!-- 주간 입력(직원별) / 주간표 / 시간대 인원 — 탭 전환 뷰 -->
+  <section id="view-winput" class="alt-view" style="display:none"></section>
   <section id="view-week" class="alt-view" style="display:none"></section>
   <section id="view-heat" class="alt-view" style="display:none"></section>
 
@@ -1537,10 +1558,16 @@
     // empId === '__SUP__' 이면 SUP_CTX를 대상으로 동작 (지원 근무 시각 입력 공유)
     const QUICK_TIMES = ['06:30','09:00','10:00','11:00','13:00','17:00','22:00','24:00'];
     function _tmEnt(empId) {
-      return empId === '__SUP__' ? SUP_CTX : STATE.entries[empId];
+      if (empId === '__SUP__') return SUP_CTX;
+      if (empId === '__WK__') return wkEdit(WK_CTX.date, WK_CTX.empId);   // 주간 입력 대상
+      return STATE.entries[empId];
     }
     function _tmLabel(empId) {
       if (empId === '__SUP__') return SUP_CTX.name || '지원 직원';
+      if (empId === '__WK__') {
+        const emp = STATE.employees.find(e => e.id === WK_CTX.empId);
+        return `${emp ? emp.name : ''} ${WK_CTX.date.slice(5).replace('-', '/')}`;
+      }
       const emp = STATE.employees.find(e => e.id === empId) || STATE.newEmployees.find(e => e.id === empId);
       return emp ? emp.name : empId;
     }
@@ -1642,6 +1669,15 @@
         // 지원: 출근 입력 시 퇴근 자동 없음(직급별 hours 개념 없음); 휴게 동기화만
         if (ent.in && ent.out) syncBreak(ent);
         renderSupScope();
+      } else if (TM_CTX.empId === '__WK__') {
+        // 주간 입력: 출근 시 직급별 퇴근 자동 + 휴게 동기화 → 주간 입력 뷰 재렌더
+        if (TM_CTX.field === 'in' && ent.in) {
+          const emp = STATE.employees.find(e => e.id === WK_CTX.empId);
+          const gh = GRADE_OUT_HOURS[emp && emp.grade];
+          if (gh) ent.out = minToTime(timeToMin(ent.in) + gh * 60);
+        }
+        if (ent.in && ent.out) syncBreak(ent);
+        renderWInput();
       } else {
         // 출근(in) 입력 → 직급별 퇴근 자동(이후 퇴근 수동 조정 가능)
         if (TM_CTX.field === 'in' && ent.in) {
@@ -1692,7 +1728,7 @@
       const e = document.getElementById('bm-end').value;
       if (timeToMin(e) <= timeToMin(s)) { say('휴게 종료 시각이 시작보다 늦어야 해요.'); return; }
       ent.break_start = s; ent.break_end = e; ent.breakH = breakDurH(ent);
-      if (BM_CTX.empId === '__SUP__') { renderSupScope(); } else { refreshRow(BM_CTX.empId); }
+      if (BM_CTX.empId === '__SUP__') { renderSupScope(); } else if (BM_CTX.empId === '__WK__') { renderWInput(); } else { refreshRow(BM_CTX.empId); }
       closeBreakModal();
     }
     // 휴게 시작 선택 시 종료를 자동(+근무길이별: 8h↑ 1시간 / 4h↑ 30분)으로 채움. 이후 종료 수동 조정 가능.
@@ -1716,7 +1752,7 @@
       if (!BM_CTX) return;
       const ent = _tmEnt(BM_CTX.empId);
       ent.break_start = null; ent.break_end = null; ent.breakH = 0;
-      if (BM_CTX.empId === '__SUP__') { renderSupScope(); } else { refreshRow(BM_CTX.empId); }
+      if (BM_CTX.empId === '__SUP__') { renderSupScope(); } else if (BM_CTX.empId === '__WK__') { renderWInput(); } else { refreshRow(BM_CTX.empId); }
       closeBreakModal();
     }
 
@@ -1887,18 +1923,18 @@
       document.querySelectorAll('#tabbar .tab').forEach(b => b.classList.toggle('is-active', b.dataset.tab === t));
       document.getElementById('main').style.display = t === 'day' ? '' : 'none';
       document.querySelector('footer').style.display = t === 'day' ? '' : 'none';
+      document.getElementById('view-winput').style.display = t === 'winput' ? '' : 'none';
       document.getElementById('view-week').style.display = t === 'week' ? '' : 'none';
       document.getElementById('view-heat').style.display = t === 'heat' ? '' : 'none';
       if (t !== 'day') {
         if (!WEEK_START) WEEK_START = weekStartOf(STATE.date);
         renderAltViews();
         const pt = document.getElementById('main').style.paddingTop;
-        document.getElementById('view-week').style.paddingTop = pt;
-        document.getElementById('view-heat').style.paddingTop = pt;
+        ['view-winput', 'view-week', 'view-heat'].forEach(id => { document.getElementById(id).style.paddingTop = pt; });
       }
     }
     function navWeek(n) { WEEK_START = addDays(WEEK_START, 7 * n); renderAltViews(); }
-    function renderAltViews() { renderWeekView(); renderHeatView(); }
+    function renderAltViews() { renderWInput(); renderWeekView(); renderHeatView(); }
 
     // 해당 일자의 자체 근무(직원별). 오늘 = 입력 중 값, 그 외 = 저장분(prev).
     function dayOwn(dateStr) {
@@ -1917,6 +1953,140 @@
       const list = dateStr === STATE.date ? (STATE.supportEntries || []) : ((STATE.prev_support_by_date || {})[dateStr] || []);
       return list.filter(s => s.direction === 'in' && s.in && s.out)
                  .map(s => ({ id: null, name: (s.name || '지원') + '(지원)', in: s.in, out: s.out }));
+    }
+
+    // ───────── 주간 입력 (직원별) — 하루 입력과 병행하는 두 번째 입력 방식 ─────────
+    //   편집분은 WEEK_EDITS(날짜→직원→entry)에 로컬 보관 → [주간 저장] 시 변경된 날짜만
+    //   일자별 payload로 묶어 gzip 전송(type=week_save_gz). 봇이 하루 저장 흐름으로 순차 처리.
+    let WK_EMP = null;
+    let WK_CTX = null;                 // 시간/휴게 모달 대상 {date, empId}
+    const WEEK_EDITS = {};             // date → {empId: entry}
+
+    function wkBaseEntry(dateStr, empId) {
+      if (dateStr === STATE.date) {
+        const t = STATE.entries[empId];
+        return t ? { in: t.in, out: t.out, breakH: t.breakH || 0, break_start: t.break_start || null, break_end: t.break_end || null, half: !!t.half, on: !!t.on }
+                 : { in: null, out: null, breakH: 0, break_start: null, break_end: null, half: false, on: false };
+      }
+      const t = ((STATE.prev_by_date_emp || {})[dateStr] || {})[empId];
+      return (t && t.in && t.out)
+        ? { in: t.in, out: t.out, breakH: t.breakH || 0, break_start: t.break_start || null, break_end: t.break_end || null, half: !!t.half, on: true }
+        : { in: null, out: null, breakH: 0, break_start: null, break_end: null, half: false, on: false };
+    }
+    function wkEntry(dateStr, empId) { return (WEEK_EDITS[dateStr] || {})[empId] || wkBaseEntry(dateStr, empId); }
+    function wkEdit(dateStr, empId) {
+      WEEK_EDITS[dateStr] = WEEK_EDITS[dateStr] || {};
+      if (!WEEK_EDITS[dateStr][empId]) WEEK_EDITS[dateStr][empId] = wkBaseEntry(dateStr, empId);
+      return WEEK_EDITS[dateStr][empId];
+    }
+    const _wkSig = (e) => JSON.stringify([!!e.on && !!e.in && !!e.out, e.in || '', e.out || '', Math.round((e.breakH || 0) * 10), e.break_start || '', e.break_end || '', !!e.half]);
+    function wkDirtyDates() {
+      return Object.keys(WEEK_EDITS)
+        .filter(d => Object.entries(WEEK_EDITS[d]).some(([id, e]) => _wkSig(e) !== _wkSig(wkBaseEntry(d, id))))
+        .sort();
+    }
+
+    function renderWInput() {
+      const el = document.getElementById('view-winput');
+      if (!el) return;
+      if (!WK_EMP && STATE.employees.length) WK_EMP = STATE.employees[0].id;
+      const ds = weekDates();
+      const label = `${ds[0].slice(5).replace('-', '/')} ~ ${ds[6].slice(5).replace('-', '/')}`;
+      const dirty = wkDirtyDates();
+      let h = `<div class="av-nav"><button type="button" onclick="navWeek(-1)">‹</button><b>🗓 주간 입력 ${label}</b><button type="button" onclick="navWeek(1)">›</button></div>`;
+      h += `<div class="av-note">직원을 골라 한 주를 한 번에 입력합니다. [💾 주간 저장] 전까지는 이 화면에만 보관됩니다.</div>`;
+      h += `<select class="wk-emp" onchange="wkSelectEmp(this.value)">`
+         + STATE.employees.map(e => `<option value="${e.id}"${e.id === WK_EMP ? ' selected' : ''}>${e.name} (${e.grade})</option>`).join('')
+         + `</select>`;
+      ds.forEach((d, i) => {
+        const e = wkEntry(d, WK_EMP);
+        const on = e.on && e.in && e.out;
+        const edited = (WEEK_EDITS[d] || {})[WK_EMP] && _wkSig(wkEntry(d, WK_EMP)) !== _wkSig(wkBaseEntry(d, WK_EMP));
+        h += `<div class="wk-day${on ? '' : ' is-off'}">`
+           + `<span class="wk-date">${d.slice(5).replace('-', '/')} ${WDAYS[i]}${edited ? ' ✏️' : ''}</span>`
+           + `<button type="button" class="wk-toggle" onclick="wkToggle('${d}')">${on ? '근무' : '휴무'}</button>`;
+        if (on) {
+          h += `<button type="button" class="wk-chip" onclick="wkOpenTime('${d}','in')">${e.in}</button>`
+             + `<span class="wk-tilde">~</span>`
+             + `<button type="button" class="wk-chip" onclick="wkOpenTime('${d}','out')">${e.out}</button>`
+             + `<button type="button" class="wk-chip wk-break" onclick="wkOpenBreak('${d}')">휴게 ${(e.breakH || 0).toFixed(1)}h</button>`;
+        }
+        h += `</div>`;
+      });
+      h += `<div class="wk-actions">`
+         + `<button type="button" class="wk-act" onclick="wkCopyPrevWeek()">🔁 전주 복사</button>`
+         + `<button type="button" class="wk-act primary" onclick="wkSave()" ${dirty.length ? '' : 'disabled'}>💾 주간 저장${dirty.length ? ` (${dirty.length}일 변경)` : ''}</button>`
+         + `</div>`;
+      el.innerHTML = h;
+    }
+    function wkSelectEmp(id) { WK_EMP = id; renderWInput(); }
+    function wkToggle(d) {
+      const e = wkEdit(d, WK_EMP);
+      e.on = !e.on;
+      if (e.on && !e.in) {
+        // 휴무→근무: 전주 같은 요일 → 직전 패턴 순으로 시간 복원
+        const src = wkEntry(addDays(d, -7), WK_EMP);
+        const emp = STATE.employees.find(x => x.id === WK_EMP);
+        const base = (src.in && src.out) ? src : (emp && emp.prev ? emp.prev : null);
+        if (base) { e.in = base.in; e.out = base.out; e.breakH = base.breakH || 0; e.break_start = base.break_start || null; e.break_end = base.break_end || null; syncBreak(e); }
+      }
+      renderWInput();
+    }
+    function wkOpenTime(d, field) { WK_CTX = { date: d, empId: WK_EMP }; wkEdit(d, WK_EMP); openTimeModal('__WK__', field); }
+    function wkOpenBreak(d) { WK_CTX = { date: d, empId: WK_EMP }; wkEdit(d, WK_EMP); openBreakModal('__WK__'); }
+    function wkCopyPrevWeek() {
+      weekDates().forEach(d => {
+        const src = wkEntry(addDays(d, -7), WK_EMP);
+        const e = wkEdit(d, WK_EMP);
+        Object.assign(e, { in: src.in, out: src.out, breakH: src.breakH || 0,
+                           break_start: src.break_start || null, break_end: src.break_end || null,
+                           half: !!src.half, on: !!(src.on && src.in && src.out) });
+      });
+      renderWInput();
+      say('전주 스케줄을 복사했습니다. 확인 후 [💾 주간 저장]을 눌러주세요.');
+    }
+
+    function wkSave() {
+      const dirty = wkDirtyDates();
+      if (!dirty.length) { say('변경된 날짜가 없습니다.'); return; }
+      if (!tg) { say('텔레그램 환경에서만 저장할 수 있습니다.'); return; }
+      const days = dirty.map(d => {
+        const entries = STATE.employees.map(emp => {
+          const e = wkEntry(d, emp.id);
+          const on = e.on && e.in && e.out;
+          return { id: emp.id, name: emp.name, grade: emp.grade,
+                   in: on ? e.in : null, out: on ? e.out : null,
+                   breakH: on ? (e.breakH || 0) : 0,
+                   break_start: on ? (e.break_start || null) : null,
+                   break_end: on ? (e.break_end || null) : null,
+                   hours: on ? calcWork(e.in, e.out, e.breakH || 0) : 0,
+                   half_day: on ? !!e.half : false };
+        });
+        const support = d === STATE.date ? (STATE.supportEntries || []).slice()
+          : ((STATE.prev_support_by_date || {})[d] || []).map(s => ({
+              direction: s.direction, other_store: s.other_store, name: s.name, grade: s.grade,
+              hours: s.hours, in: s.in, out: s.out, breakH: s.breakH,
+              break_start: s.break_start || null, break_end: s.break_end || null }));
+        return { date: d, base_version: (STATE.prev_versions || {})[d] ?? 'EMPTY',
+                 entries, support_entries: support, new_employees: [], deleted_employees: [] };
+      });
+      let payload;
+      try {
+        const gz = pako.gzip(JSON.stringify({ days }));
+        let bin = ''; gz.forEach(b => { bin += String.fromCharCode(b); });
+        const b64 = btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        payload = { type: 'week_save_gz', store: STATE.store, gz: b64 };
+      } catch (e) {
+        payload = { type: 'week_save', store: STATE.store, days };
+      }
+      if (JSON.stringify(payload).length > 4000) {
+        say('변경 일수가 많아 한 번에 저장할 수 없습니다. 며칠씩 나눠 저장해주세요.');
+        return;
+      }
+      const go = () => { tg.sendData(JSON.stringify(payload)); setTimeout(() => { try { tg.close(); } catch (e) {} }, 150); };
+      const msg = `${dirty.length}일 변경분(${dirty.map(d => d.slice(5).replace('-', '/')).join(', ')})을 저장합니다.\n(저장하면 미니앱이 닫히고 봇이 날짜별 처리 결과를 알려줍니다)`;
+      if (tg.showConfirm) tg.showConfirm(msg, ok => { if (ok) go(); });
+      else go();
     }
 
     function renderWeekView() {
@@ -1973,7 +2143,18 @@
         h += `</tr>`;
       }
       h += `</table>`;
+      h += `<button type="button" class="wk-send" onclick="sendHeatTable()">📨 이 시간대 인원표를 텔레그램으로 보내기</button>`;
       el.innerHTML = h;
+    }
+    function sendHeatTable() {
+      if (!tg) { say('텔레그램 환경에서만 전송할 수 있습니다.'); return; }
+      const go = () => {
+        tg.sendData(JSON.stringify({ type: 'heat_table', store: STATE.store, start: WEEK_START }));
+        setTimeout(() => { try { tg.close(); } catch (e) {} }, 150);
+      };
+      const msg = `${WEEK_START} 주 시간대 인원표를 이 방에 전송합니다.\n(전송하면 미니앱이 닫힙니다. 저장 안 한 입력이 있으면 먼저 저장하세요.)`;
+      if (tg.showConfirm) tg.showConfirm(msg, ok => { if (ok) go(); });
+      else go();
     }
     function heatCell(i, hr) {
       const d = weekDates()[i];
