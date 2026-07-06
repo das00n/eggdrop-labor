@@ -427,6 +427,28 @@
     .sup-name-suggest .item:active { background: rgba(0,0,0,0.05); }
     .sup-name-suggest .item .gr { font-size: 11px; padding: 2px 6px; border-radius: 8px; color: white; }
 
+    /* ── 탭 + 주간표/시간대 인원 뷰 ── */
+    .tabbar { display: flex; gap: 6px; margin-top: 8px; }
+    .tab { flex: 1; padding: 7px 4px; font-size: 13px; font-weight: 600;
+           border: 1px solid rgba(0,0,0,0.1); background: var(--section-bg); color: var(--hint); border-radius: 10px; }
+    .tab.is-active { background: var(--btn); color: #fff; border-color: var(--btn); }
+    .alt-view { padding: 0 12px 90px; }
+    .av-nav { display: flex; align-items: center; justify-content: space-between; margin: 10px 0 6px; }
+    .av-nav b { font-size: 15px; }
+    .av-nav button { width: 38px; height: 32px; border: 1px solid rgba(0,0,0,0.12); background: var(--section-bg); border-radius: 8px; font-size: 16px; }
+    .av-note { font-size: 11px; color: var(--hint); margin: 0 0 8px; }
+    .wk-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    table.wk { border-collapse: collapse; font-size: 11px; font-variant-numeric: tabular-nums; }
+    .wk th, .wk td { border: 1px solid rgba(0,0,0,0.08); padding: 4px 6px; text-align: center; white-space: nowrap; }
+    .wk th { background: var(--section-bg); }
+    .wk td.off { background: rgba(0,0,0,0.05); color: #b8b8b8; }
+    .wk .dcol { position: sticky; left: 0; background: var(--section-bg); font-weight: 700; z-index: 1; }
+    .wk-send { display: block; width: 100%; margin: 14px 0 4px; padding: 13px; font-size: 14px; font-weight: 700;
+               background: var(--btn); color: #fff; border: none; border-radius: 10px; }
+    table.hm { border-collapse: collapse; font-size: 12px; width: 100%; table-layout: fixed; font-variant-numeric: tabular-nums; }
+    .hm th, .hm td { border: 1px solid rgba(0,0,0,0.08); padding: 5px 0; text-align: center; }
+    .hm .hcol { width: 38px; font-size: 11px; color: var(--hint); }
+
     /* 날짜 picker */
     .date-grid {
       display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px;
@@ -483,6 +505,11 @@
   <header>
     <h1 class="h-title" id="hdr-store">매장 로딩 중…</h1>
     <p class="h-sub" id="hdr-sub">⏳</p>
+    <div class="tabbar" id="tabbar" style="display:none">
+      <button type="button" class="tab is-active" data-tab="day" onclick="switchTab('day')">📝 입력</button>
+      <button type="button" class="tab" data-tab="week" onclick="switchTab('week')">📆 주간표</button>
+      <button type="button" class="tab" data-tab="heat" onclick="switchTab('heat')">👥 시간대 인원</button>
+    </div>
   </header>
 
   <div id="err-banner" class="err-banner" style="display:none"></div>
@@ -499,6 +526,10 @@
   <main id="main">
     <div class="loading" id="loading">⏳ 직원 정보 불러오는 중...</div>
   </main>
+
+  <!-- 주간표 / 시간대 인원 — 읽기 뷰 (탭 전환, 저장된 스케줄 기준) -->
+  <section id="view-week" class="alt-view" style="display:none"></section>
+  <section id="view-heat" class="alt-view" style="display:none"></section>
 
   <footer>
     <div class="summary-amount" id="sum-amount">0명 · 0h 근무</div>
@@ -841,6 +872,8 @@
       renderMain();
       updateSummary();
       document.getElementById('save-btn').disabled = false;
+      document.getElementById('tabbar').style.display = 'flex';   // 주간표·시간대 인원 탭 활성화
+      adjustHeaderOffset();
       maybeOfferRestore();
     }
 
@@ -1835,6 +1868,119 @@
       } else {
         say('저장 데이터:\n' + JSON.stringify(payload, null, 2));
       }
+    }
+
+    // ───────── 탭: 입력 / 주간표 / 시간대 인원 (2026-07-06 개편) ─────────
+    //   주간표·시간대 인원 = 읽기 뷰. 데이터 = 봇 payload의 이번 달 저장분(prev_by_date_emp 등),
+    //   단 오늘(STATE.date)은 화면에서 입력 중인 값을 실시간 반영.
+    let TAB = 'day';
+    let WEEK_START = null;   // 'YYYY-MM-DD' (월요일)
+    const WDAYS = ['월', '화', '수', '목', '금', '토', '일'];
+    const pad2 = (n) => String(n).padStart(2, '0');
+    const isoOf = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+    function addDays(dateStr, n) { const d = new Date(dateStr + 'T00:00:00'); d.setDate(d.getDate() + n); return isoOf(d); }
+    function weekStartOf(dateStr) { const d = new Date(dateStr + 'T00:00:00'); return addDays(dateStr, -((d.getDay() + 6) % 7)); }
+    function weekDates() { return Array.from({ length: 7 }, (_, i) => addDays(WEEK_START, i)); }
+
+    function switchTab(t) {
+      TAB = t;
+      document.querySelectorAll('#tabbar .tab').forEach(b => b.classList.toggle('is-active', b.dataset.tab === t));
+      document.getElementById('main').style.display = t === 'day' ? '' : 'none';
+      document.querySelector('footer').style.display = t === 'day' ? '' : 'none';
+      document.getElementById('view-week').style.display = t === 'week' ? '' : 'none';
+      document.getElementById('view-heat').style.display = t === 'heat' ? '' : 'none';
+      if (t !== 'day') {
+        if (!WEEK_START) WEEK_START = weekStartOf(STATE.date);
+        renderAltViews();
+        const pt = document.getElementById('main').style.paddingTop;
+        document.getElementById('view-week').style.paddingTop = pt;
+        document.getElementById('view-heat').style.paddingTop = pt;
+      }
+    }
+    function navWeek(n) { WEEK_START = addDays(WEEK_START, 7 * n); renderAltViews(); }
+    function renderAltViews() { renderWeekView(); renderHeatView(); }
+
+    // 해당 일자의 자체 근무(직원별). 오늘 = 입력 중 값, 그 외 = 저장분(prev).
+    function dayOwn(dateStr) {
+      const out = [];
+      if (dateStr === STATE.date) {
+        STATE.employees.forEach(e => { const t = STATE.entries[e.id];
+          if (t && t.on && t.in && t.out) out.push({ id: e.id, name: e.name, in: t.in, out: t.out }); });
+      } else {
+        const m = (STATE.prev_by_date_emp || {})[dateStr] || {};
+        STATE.employees.forEach(e => { const t = m[e.id];
+          if (t && t.in && t.out) out.push({ id: e.id, name: e.name, in: t.in, out: t.out }); });
+      }
+      return out;
+    }
+    function daySupportIn(dateStr) {
+      const list = dateStr === STATE.date ? (STATE.supportEntries || []) : ((STATE.prev_support_by_date || {})[dateStr] || []);
+      return list.filter(s => s.direction === 'in' && s.in && s.out)
+                 .map(s => ({ id: null, name: (s.name || '지원') + '(지원)', in: s.in, out: s.out }));
+    }
+
+    function renderWeekView() {
+      const el = document.getElementById('view-week');
+      const ds = weekDates();
+      const emps = STATE.employees;
+      const label = `${ds[0].slice(5).replace('-', '/')} ~ ${ds[6].slice(5).replace('-', '/')}`;
+      let h = `<div class="av-nav"><button type="button" onclick="navWeek(-1)">‹</button><b>📆 주간표 ${label}</b><button type="button" onclick="navWeek(1)">›</button></div>`;
+      h += `<div class="av-note">저장된 스케줄 기준 (오늘 날짜는 입력 중인 값 반영) · 이번 달 데이터만 표시</div>`;
+      h += `<div class="wk-wrap"><table class="wk"><tr><th class="dcol">날짜</th>${emps.map(e => `<th>${e.name}</th>`).join('')}<th>지원</th></tr>`;
+      ds.forEach((d, i) => {
+        const byId = {}; dayOwn(d).forEach(o => { byId[o.id] = o; });
+        const sup = daySupportIn(d);
+        h += `<tr><td class="dcol">${d.slice(5).replace('-', '/')} ${WDAYS[i]}</td>`;
+        h += emps.map(e => { const o = byId[e.id]; return o ? `<td>${o.in}<br>${o.out}</td>` : '<td class="off">—</td>'; }).join('');
+        h += `<td>${sup.length ? '+' + sup.length : '<span style="color:#ccc">—</span>'}</td></tr>`;
+      });
+      h += `</table></div>`;
+      h += `<button type="button" class="wk-send" onclick="sendWeeklyTable()">📨 이 주간표를 텔레그램으로 보내기</button>`;
+      el.innerHTML = h;
+    }
+
+    function sendWeeklyTable() {
+      if (!tg) { say('텔레그램 환경에서만 전송할 수 있습니다.'); return; }
+      const go = () => {
+        tg.sendData(JSON.stringify({ type: 'weekly_table', store: STATE.store, start: WEEK_START }));
+        setTimeout(() => { try { tg.close(); } catch (e) {} }, 150);
+      };
+      const msg = `${WEEK_START} 주간표를 이 방에 전송합니다.\n(전송하면 미니앱이 닫힙니다. 저장 안 한 입력이 있으면 먼저 저장하세요.)`;
+      if (tg.showConfirm) tg.showConfirm(msg, ok => { if (ok) go(); });
+      else go();
+    }
+
+    function renderHeatView() {
+      const el = document.getElementById('view-heat');
+      const ds = weekDates();
+      const toH = (t) => { const [a, b] = t.split(':').map(Number); return a + b / 60; };
+      const people = ds.map(d => dayOwn(d).concat(daySupportIn(d)));
+      let lo = 24, hi = 0;
+      people.forEach(list => list.forEach(p => { lo = Math.min(lo, Math.floor(toH(p.in))); hi = Math.max(hi, Math.ceil(toH(p.out))); }));
+      if (lo >= hi) { lo = 7; hi = 22; }
+      const label = `${ds[0].slice(5).replace('-', '/')} ~ ${ds[6].slice(5).replace('-', '/')}`;
+      let h = `<div class="av-nav"><button type="button" onclick="navWeek(-1)">‹</button><b>👥 시간대 인원 ${label}</b><button type="button" onclick="navWeek(1)">›</button></div>`;
+      h += `<div class="av-note">칸 = 그 시간대 근무 인원(지원 포함 · 휴게 미반영). 칸을 누르면 명단이 뜹니다.</div>`;
+      h += `<table class="hm"><tr><th class="hcol"></th>${ds.map((d, i) => `<th>${WDAYS[i]}<br><span style="font-weight:400;color:var(--hint)">${d.slice(8)}</span></th>`).join('')}</tr>`;
+      for (let hr = lo; hr < hi; hr++) {
+        h += `<tr><td class="hcol">${pad2(hr)}시</td>`;
+        ds.forEach((d, i) => {
+          const n = people[i].filter(p => toH(p.in) < hr + 1 && toH(p.out) > hr).length;
+          const hasAny = people[i].length > 0;
+          const bg = !hasAny ? '' : (n === 0 ? '#fde8e8' : n === 1 ? '#fdf3d7' : n === 2 ? '#e3f2e6' : n === 3 ? '#c9e8cf' : '#a9dcb4');
+          h += `<td style="background:${bg}" onclick="heatCell(${i},${hr})">${hasAny ? n : ''}</td>`;
+        });
+        h += `</tr>`;
+      }
+      h += `</table>`;
+      el.innerHTML = h;
+    }
+    function heatCell(i, hr) {
+      const d = weekDates()[i];
+      const toH = (t) => { const [a, b] = t.split(':').map(Number); return a + b / 60; };
+      const names = dayOwn(d).concat(daySupportIn(d))
+        .filter(p => toH(p.in) < hr + 1 && toH(p.out) > hr).map(p => p.name);
+      say(`${d.slice(5).replace('-', '/')}(${WDAYS[i]}) ${pad2(hr)}시대\n${names.length ? names.join(', ') : '근무자 없음'}`);
     }
 
     function showError(msg) {
