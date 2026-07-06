@@ -2155,14 +2155,15 @@
       if (lo >= hi) { lo = 7; hi = 22; }
       const label = `${ds[0].slice(5).replace('-', '/')} ~ ${ds[6].slice(5).replace('-', '/')}`;
       let h = `<div class="av-nav"><button type="button" onclick="navWeek(-1)">‹</button><b>👥 시간대 인원 ${label}</b><button type="button" onclick="navWeek(1)">›</button></div>`;
-      h += `<div class="av-note">칸 = 그 시간대 근무 인원(지원 포함 · 휴게 반영). 칸을 누르면 명단이 뜹니다.</div>`;
+      h += `<div class="av-note">칸 = 그 시간대 근무 인원(지원 포함 · 휴게 반영). 1명=초록(양호) · 많을수록 노랑→주황(인건비 주의) · 없으면 빨강(경고). 칸을 누르면 명단이 뜹니다.</div>`;
       h += `<table class="hm"><tr><th class="hcol"></th>${ds.map((d, i) => `<th>${WDAYS[i]}<br><span style="font-weight:400;color:var(--hint)">${d.slice(8)}</span></th>`).join('')}</tr>`;
       for (let hr = lo; hr < hi; hr++) {
         h += `<tr><td class="hcol">${pad2(hr)}시</td>`;
         ds.forEach((d, i) => {
           const n = people[i].reduce((a, p) => a + heatFrac(p, hr), 0);
           const hasAny = people[i].length > 0;
-          const bg = !hasAny ? '' : (n <= 0 ? '#fde8e8' : n < 1.5 ? '#fdf3d7' : n < 2.5 ? '#e3f2e6' : n < 3.5 ? '#c9e8cf' : '#a9dcb4');
+          // 0명=빨강(경고) · 1명=초록(양호) · 많아질수록 노랑→주황(인건비 주의)
+          const bg = !hasAny ? '' : (n <= 0 ? '#fbd5d5' : n < 1.5 ? '#d9efdc' : n < 2.5 ? '#fdf3d7' : n < 3.5 ? '#fde3c3' : '#f7c59a');
           h += `<td style="background:${bg}" onclick="heatCell(${i},${hr})">${hasAny ? heatFmt(n) : ''}</td>`;
         });
         h += `</tr>`;
