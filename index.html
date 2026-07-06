@@ -2106,14 +2106,18 @@
       const label = `${ds[0].slice(5).replace('-', '/')} ~ ${ds[6].slice(5).replace('-', '/')}`;
       let h = `<div class="av-nav"><button type="button" onclick="navWeek(-1)">‹</button><b>📆 주간표 ${label}</b><button type="button" onclick="navWeek(1)">›</button></div>`;
       h += `<div class="av-note">저장된 스케줄 기준 (오늘 날짜는 입력 중인 값 반영) · 최근 3개월 조회 가능</div>`;
-      h += `<div class="wk-wrap"><table class="wk"><tr><th class="dcol">날짜</th>${emps.map(e => `<th>${e.name}</th>`).join('')}<th>지원</th></tr>`;
-      ds.forEach((d, i) => {
-        const byId = {}; dayOwn(d).forEach(o => { byId[o.id] = o; });
-        const sup = daySupportIn(d);
-        h += `<tr><td class="dcol">${d.slice(5).replace('-', '/')} ${WDAYS[i]}</td>`;
-        h += emps.map(e => { const o = byId[e.id]; return o ? `<td>${o.in}<br>${o.out}</td>` : '<td class="off">—</td>'; }).join('');
-        h += `<td>${sup.length ? '+' + sup.length : '<span style="color:#ccc">—</span>'}</td></tr>`;
+      const dayMaps = ds.map(d => { const m = {}; dayOwn(d).forEach(o => { m[o.id] = o; }); return m; });
+      const supCnt = ds.map(d => daySupportIn(d).length);
+      h += `<div class="wk-wrap"><table class="wk"><tr><th class="dcol">직원</th>${ds.map((d, i) => `<th>${d.slice(5).replace('-', '/')}<br>${WDAYS[i]}</th>`).join('')}</tr>`;
+      emps.forEach(e => {
+        h += `<tr><td class="dcol">${e.name}</td>`;
+        h += ds.map((d, i) => { const o = dayMaps[i][e.id]; return o ? `<td>${o.in}<br>${o.out}</td>` : '<td class="off">—</td>'; }).join('');
+        h += `</tr>`;
       });
+      if (supCnt.some(n => n > 0)) {
+        h += `<tr><td class="dcol">지원</td>${supCnt.map(n => n ? `<td>+${n}</td>` : '<td class="off">—</td>').join('')}</tr>`;
+      }
+      if (!emps.length) h += `<tr><td colspan="8" class="off" style="padding:14px">이 주에 저장된 근무 기록이 없습니다</td></tr>`;
       h += `</table></div>`;
       h += `<button type="button" class="wk-send" onclick="sendWeeklyTable()">📨 이 주간표를 텔레그램으로 보내기</button>`;
       el.innerHTML = h;
@@ -2130,16 +2134,17 @@
       else go();
     }
 
-    // [hr, hr+1) 안에 실제 근무가 있으면 true — 휴게 구간(bs~be)은 제외
-    function heatCovers(p, hr) {
+    // [hr, hr+1) 안의 실근무 시간(0~1h) — 휴게 구간(bs~be) 제외. 30분 근무 = 0.5
+    function heatFrac(p, hr) {
       const toH = (t) => { const [a, b] = t.split(':').map(Number); return a + b / 60; };
       const a = toH(p.in), b = toH(p.out);
       const s0 = Math.max(a, hr), e0 = Math.min(b, hr + 1);
       let seg = e0 - s0;
-      if (seg <= 0) return false;
+      if (seg <= 0) return 0;
       if (p.bs && p.be) seg -= Math.max(0, Math.min(toH(p.be), e0) - Math.max(toH(p.bs), s0));
-      return seg > 1e-6;
+      return Math.max(0, seg);
     }
+    const heatFmt = (n) => { const t = n.toFixed(1); return t.endsWith('.0') ? t.slice(0, -2) : t; };
     function renderHeatView() {
       const el = document.getElementById('view-heat');
       const ds = weekDates();
@@ -2155,10 +2160,10 @@
       for (let hr = lo; hr < hi; hr++) {
         h += `<tr><td class="hcol">${pad2(hr)}시</td>`;
         ds.forEach((d, i) => {
-          const n = people[i].filter(p => heatCovers(p, hr)).length;
+          const n = people[i].reduce((a, p) => a + heatFrac(p, hr), 0);
           const hasAny = people[i].length > 0;
-          const bg = !hasAny ? '' : (n === 0 ? '#fde8e8' : n === 1 ? '#fdf3d7' : n === 2 ? '#e3f2e6' : n === 3 ? '#c9e8cf' : '#a9dcb4');
-          h += `<td style="background:${bg}" onclick="heatCell(${i},${hr})">${hasAny ? n : ''}</td>`;
+          const bg = !hasAny ? '' : (n <= 0 ? '#fde8e8' : n < 1.5 ? '#fdf3d7' : n < 2.5 ? '#e3f2e6' : n < 3.5 ? '#c9e8cf' : '#a9dcb4');
+          h += `<td style="background:${bg}" onclick="heatCell(${i},${hr})">${hasAny ? heatFmt(n) : ''}</td>`;
         });
         h += `</tr>`;
       }
@@ -2180,7 +2185,8 @@
       const d = weekDates()[i];
       const toH = (t) => { const [a, b] = t.split(':').map(Number); return a + b / 60; };
       const names = dayOwn(d).concat(daySupportIn(d))
-        .filter(p => heatCovers(p, hr)).map(p => p.name);
+        .map(p => ({ p, f: heatFrac(p, hr) })).filter(x => x.f > 1e-6)
+        .map(x => x.f < 0.999 ? `${x.p.name} (${heatFmt(x.f)}h)` : x.p.name);
       say(`${d.slice(5).replace('-', '/')}(${WDAYS[i]}) ${pad2(hr)}시대\n${names.length ? names.join(', ') : '근무자 없음'}`);
     }
 
