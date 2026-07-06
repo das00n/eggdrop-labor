@@ -1941,18 +1941,18 @@
       const out = [];
       if (dateStr === STATE.date) {
         STATE.employees.forEach(e => { const t = STATE.entries[e.id];
-          if (t && t.on && t.in && t.out) out.push({ id: e.id, name: e.name, in: t.in, out: t.out }); });
+          if (t && t.on && t.in && t.out) out.push({ id: e.id, name: e.name, in: t.in, out: t.out, bs: t.break_start || null, be: t.break_end || null }); });
       } else {
         const m = (STATE.prev_by_date_emp || {})[dateStr] || {};
         STATE.employees.forEach(e => { const t = m[e.id];
-          if (t && t.in && t.out) out.push({ id: e.id, name: e.name, in: t.in, out: t.out }); });
+          if (t && t.in && t.out) out.push({ id: e.id, name: e.name, in: t.in, out: t.out, bs: t.break_start || null, be: t.break_end || null }); });
       }
       return out;
     }
     function daySupportIn(dateStr) {
       const list = dateStr === STATE.date ? (STATE.supportEntries || []) : ((STATE.prev_support_by_date || {})[dateStr] || []);
       return list.filter(s => s.direction === 'in' && s.in && s.out)
-                 .map(s => ({ id: null, name: (s.name || '지원') + '(지원)', in: s.in, out: s.out }));
+                 .map(s => ({ id: null, name: (s.name || '지원') + '(지원)', in: s.in, out: s.out, bs: s.break_start || null, be: s.break_end || null }));
     }
 
     // ───────── 주간 입력 (직원별) — 하루 입력과 병행하는 두 번째 입력 방식 ─────────
@@ -2099,7 +2099,9 @@
     function renderWeekView() {
       const el = document.getElementById('view-week');
       const ds = weekDates();
-      const emps = STATE.employees;
+      const weekIds = new Set();
+      ds.forEach(d => dayOwn(d).forEach(o => weekIds.add(o.id)));
+      const emps = STATE.employees.filter(e => weekIds.has(e.id));   // 그 주 근무자만
       const label = `${ds[0].slice(5).replace('-', '/')} ~ ${ds[6].slice(5).replace('-', '/')}`;
       let h = `<div class="av-nav"><button type="button" onclick="navWeek(-1)">‹</button><b>📆 주간표 ${label}</b><button type="button" onclick="navWeek(1)">›</button></div>`;
       h += `<div class="av-note">저장된 스케줄 기준 (오늘 날짜는 입력 중인 값 반영) · 최근 3개월 조회 가능</div>`;
@@ -2127,6 +2129,16 @@
       else go();
     }
 
+    // [hr, hr+1) 안에 실제 근무가 있으면 true — 휴게 구간(bs~be)은 제외
+    function heatCovers(p, hr) {
+      const toH = (t) => { const [a, b] = t.split(':').map(Number); return a + b / 60; };
+      const a = toH(p.in), b = toH(p.out);
+      const s0 = Math.max(a, hr), e0 = Math.min(b, hr + 1);
+      let seg = e0 - s0;
+      if (seg <= 0) return false;
+      if (p.bs && p.be) seg -= Math.max(0, Math.min(toH(p.be), e0) - Math.max(toH(p.bs), s0));
+      return seg > 1e-6;
+    }
     function renderHeatView() {
       const el = document.getElementById('view-heat');
       const ds = weekDates();
@@ -2137,12 +2149,12 @@
       if (lo >= hi) { lo = 7; hi = 22; }
       const label = `${ds[0].slice(5).replace('-', '/')} ~ ${ds[6].slice(5).replace('-', '/')}`;
       let h = `<div class="av-nav"><button type="button" onclick="navWeek(-1)">‹</button><b>👥 시간대 인원 ${label}</b><button type="button" onclick="navWeek(1)">›</button></div>`;
-      h += `<div class="av-note">칸 = 그 시간대 근무 인원(지원 포함 · 휴게 미반영). 칸을 누르면 명단이 뜹니다.</div>`;
+      h += `<div class="av-note">칸 = 그 시간대 근무 인원(지원 포함 · 휴게 반영). 칸을 누르면 명단이 뜹니다.</div>`;
       h += `<table class="hm"><tr><th class="hcol"></th>${ds.map((d, i) => `<th>${WDAYS[i]}<br><span style="font-weight:400;color:var(--hint)">${d.slice(8)}</span></th>`).join('')}</tr>`;
       for (let hr = lo; hr < hi; hr++) {
         h += `<tr><td class="hcol">${pad2(hr)}시</td>`;
         ds.forEach((d, i) => {
-          const n = people[i].filter(p => toH(p.in) < hr + 1 && toH(p.out) > hr).length;
+          const n = people[i].filter(p => heatCovers(p, hr)).length;
           const hasAny = people[i].length > 0;
           const bg = !hasAny ? '' : (n === 0 ? '#fde8e8' : n === 1 ? '#fdf3d7' : n === 2 ? '#e3f2e6' : n === 3 ? '#c9e8cf' : '#a9dcb4');
           h += `<td style="background:${bg}" onclick="heatCell(${i},${hr})">${hasAny ? n : ''}</td>`;
@@ -2167,7 +2179,7 @@
       const d = weekDates()[i];
       const toH = (t) => { const [a, b] = t.split(':').map(Number); return a + b / 60; };
       const names = dayOwn(d).concat(daySupportIn(d))
-        .filter(p => toH(p.in) < hr + 1 && toH(p.out) > hr).map(p => p.name);
+        .filter(p => heatCovers(p, hr)).map(p => p.name);
       say(`${d.slice(5).replace('-', '/')}(${WDAYS[i]}) ${pad2(hr)}시대\n${names.length ? names.join(', ') : '근무자 없음'}`);
     }
 
