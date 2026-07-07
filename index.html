@@ -881,11 +881,12 @@
             break_start: emp.prev.break_start || null,
             break_end: emp.prev.break_end || null,
             half: !!emp.prev.half,
+            hol: !!emp.prev.hol,
             on: true,
           };
           syncBreak(STATE.entries[emp.id]);
         } else {
-          STATE.entries[emp.id] = { in: null, out: null, breakH: 0, break_start: null, break_end: null, half: false, on: false };
+          STATE.entries[emp.id] = { in: null, out: null, breakH: 0, break_start: null, break_end: null, half: false, hol: false, on: false };
         }
       });
 
@@ -948,7 +949,8 @@
           breakH: on ? (+e.breakH || 0) : 0,
           break_start: on ? (e.break_start || null) : null,
           break_end: on ? (e.break_end || null) : null,
-          half: on ? !!e.half_day : false, on,
+          half: on ? !!e.half_day : false,
+          hol: on ? !!e.holiday : false, on,
         };
         if (on) syncBreak(STATE.entries[e.id]);
       });
@@ -1321,12 +1323,13 @@
             break_start: p.break_start || null,
             break_end: p.break_end || null,
             half: !!p.half,
+            hol: !!p.hol,
             on: true,
           };
           syncBreak(STATE.entries[emp.id]);
         } else {
           // 그날 데이터 없음 → 휴무
-          STATE.entries[emp.id] = { in: null, out: null, breakH: 0, break_start: null, break_end: null, on: false };
+          STATE.entries[emp.id] = { in: null, out: null, breakH: 0, break_start: null, break_end: null, hol: false, on: false };
         }
       });
       // 지원 entries 재구성
@@ -1421,7 +1424,7 @@
             <div class="break-chip" onclick="openBreakModal('${emp.id}')">${ent.break_start && ent.break_end ? `휴게 ${ent.break_start}~${ent.break_end}` : '휴게 없음'}</div>
             <div class="work-hours ${incomplete ? 'warn' : ''}">${workStr}</div>
           </div>
-          ${emp.grade !== 'Crew' ? `<div class="half-row"><div class="half-chip${ent.half ? ' active' : ''}" onclick="toggleHalf('${emp.id}')">${ent.half ? '✓ 반차 (0.5일)' : '☐ 반차 (절반 근무)'}</div></div>` : ''}
+          <div class="half-row">${emp.grade !== 'Crew' ? `<div class="half-chip${ent.half ? ' active' : ''}" onclick="toggleHalf('${emp.id}')">${ent.half ? '✓ 반차 (0.5일)' : '☐ 반차 (절반 근무)'}</div>` : ''}<div class="half-chip hol-chip${ent.hol ? ' active' : ''}" onclick="toggleHol('${emp.id}')" style="margin-left:6px">${ent.hol ? '✓ 🎌 공휴일 근무' : '☐ 🎌 공휴일 근무'}</div></div>
         ` : `
           <div class="emp-time-row">
             <div class="off-label">휴무 · 토글 ON으로 변경</div>
@@ -1555,6 +1558,13 @@
     function toggleHalf(empId) {
       const ent = STATE.entries[empId];
       ent.half = !ent.half;
+      refreshRow(empId);
+    }
+
+    // ───────── 공휴일 근무 토글 (주6일째 등 지정 — 급여 공휴일 수당 계산용) ─────────
+    function toggleHol(empId) {
+      const ent = STATE.entries[empId];
+      ent.hol = !ent.hol;
       refreshRow(empId);
     }
 
@@ -1880,6 +1890,7 @@
           break_end: on ? (ent.break_end || null) : null,
           hours: work,
           half_day: on ? !!ent.half : false,
+          holiday: on ? !!ent.hol : false,
         };
         // Crew 시급 변경분 전달 (개인별)
         if (emp.grade === 'Crew' && STATE.crewRateChanges[emp.id]) {
@@ -1969,12 +1980,12 @@
     function wkBaseEntry(dateStr, empId) {
       if (dateStr === STATE.date) {
         const t = STATE.entries[empId];
-        return t ? { in: t.in, out: t.out, breakH: t.breakH || 0, break_start: t.break_start || null, break_end: t.break_end || null, half: !!t.half, on: !!t.on }
-                 : { in: null, out: null, breakH: 0, break_start: null, break_end: null, half: false, on: false };
+        return t ? { in: t.in, out: t.out, breakH: t.breakH || 0, break_start: t.break_start || null, break_end: t.break_end || null, half: !!t.half, hol: !!t.hol, on: !!t.on }
+                 : { in: null, out: null, breakH: 0, break_start: null, break_end: null, half: false, hol: false, on: false };
       }
       const t = ((STATE.prev_by_date_emp || {})[dateStr] || {})[empId];
       return (t && t.in && t.out)
-        ? { in: t.in, out: t.out, breakH: t.breakH || 0, break_start: t.break_start || null, break_end: t.break_end || null, half: !!t.half, on: true }
+        ? { in: t.in, out: t.out, breakH: t.breakH || 0, break_start: t.break_start || null, break_end: t.break_end || null, half: !!t.half, hol: !!t.hol, on: true }
         : { in: null, out: null, breakH: 0, break_start: null, break_end: null, half: false, on: false };
     }
     function wkEntry(dateStr, empId) { return (WEEK_EDITS[dateStr] || {})[empId] || wkBaseEntry(dateStr, empId); }
@@ -2071,7 +2082,8 @@
                    break_start: on ? (e.break_start || null) : null,
                    break_end: on ? (e.break_end || null) : null,
                    hours: on ? calcWork(e.in, e.out, e.breakH || 0) : 0,
-                   half_day: on ? !!e.half : false };
+                   half_day: on ? !!e.half : false,
+                   holiday: on ? !!e.hol : false };
         });
         const support = d === STATE.date ? (STATE.supportEntries || []).slice()
           : ((STATE.prev_support_by_date || {})[d] || []).map(s => ({
