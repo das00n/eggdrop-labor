@@ -453,7 +453,11 @@
     .wk-emp { width: 100%; padding: 10px 12px; margin: 4px 0 10px; font-size: 15px; font-weight: 600;
               border: 1px solid rgba(0,0,0,0.15); border-radius: 10px; background: var(--section-bg); }
     .wk-day { display: flex; align-items: center; gap: 6px; padding: 8px 6px; border-bottom: 1px solid rgba(0,0,0,0.06);
-              font-variant-numeric: tabular-nums; }
+              font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+    .wk-mini { padding: 6px 7px; font-size: 11px; font-weight: 700; border-radius: 8px;
+               border: 1px solid rgba(0,0,0,0.12); background: var(--section-bg); color: var(--hint); flex-shrink: 0; }
+    .wk-mini.on-half { background: #5856d6; color: #fff; border-color: #5856d6; }
+    .wk-mini.on-hol { background: #e11d48; color: #fff; border-color: #e11d48; }
     .wk-day.is-off { background: rgba(0,0,0,0.03); }
     .wk-date { width: 74px; font-size: 13px; font-weight: 700; flex-shrink: 0; }
     .wk-toggle { padding: 6px 10px; font-size: 12px; font-weight: 600; border-radius: 8px;
@@ -2021,10 +2025,13 @@
            + `<span class="wk-date">${d.slice(5).replace('-', '/')} ${WDAYS[i]}${edited ? ' ✏️' : ''}</span>`
            + `<button type="button" class="wk-toggle" onclick="wkToggle('${d}')">${on ? '근무' : '휴무'}</button>`;
         if (on) {
+          const emp = STATE.employees.find(x => x.id === WK_EMP);
           h += `<button type="button" class="wk-chip" onclick="wkOpenTime('${d}','in')">${e.in}</button>`
              + `<span class="wk-tilde">~</span>`
              + `<button type="button" class="wk-chip" onclick="wkOpenTime('${d}','out')">${e.out}</button>`
-             + `<button type="button" class="wk-chip wk-break" onclick="wkOpenBreak('${d}')">휴게 ${(e.breakH || 0).toFixed(1)}h</button>`;
+             + `<button type="button" class="wk-chip wk-break" onclick="wkOpenBreak('${d}')">휴게 ${(e.breakH || 0).toFixed(1)}h</button>`
+             + (emp && emp.grade !== 'Crew' ? `<button type="button" class="wk-mini${e.half ? ' on-half' : ''}" onclick="wkToggleHalf('${d}')">반차</button>` : '')
+             + `<button type="button" class="wk-mini${e.hol ? ' on-hol' : ''}" onclick="wkToggleHol('${d}')">🎌 공휴</button>`;
         }
         h += `</div>`;
       });
@@ -2047,6 +2054,8 @@
       }
       renderWInput();
     }
+    function wkToggleHalf(d) { const e = wkEdit(d, WK_EMP); e.half = !e.half; renderWInput(); }
+    function wkToggleHol(d) { const e = wkEdit(d, WK_EMP); e.hol = !e.hol; renderWInput(); }
     function wkOpenTime(d, field) { WK_CTX = { date: d, empId: WK_EMP }; wkEdit(d, WK_EMP); openTimeModal('__WK__', field); }
     function wkOpenBreak(d) { WK_CTX = { date: d, empId: WK_EMP }; wkEdit(d, WK_EMP); openBreakModal('__WK__'); }
     function wkCopyPrevWeek() {
@@ -2055,7 +2064,8 @@
         const e = wkEdit(d, WK_EMP);
         Object.assign(e, { in: src.in, out: src.out, breakH: src.breakH || 0,
                            break_start: src.break_start || null, break_end: src.break_end || null,
-                           half: !!src.half, on: !!(src.on && src.in && src.out) });
+                           half: !!src.half, hol: false,   // 공휴일은 날짜 속성 — 전주 복사 제외
+                           on: !!(src.on && src.in && src.out) });
       });
       renderWInput();
       say('전주 스케줄을 복사했습니다. 확인 후 [💾 주간 저장]을 눌러주세요.');
