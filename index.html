@@ -450,8 +450,9 @@
     .hm th, .hm td { border: 1px solid rgba(127,127,127,0.25); padding: 5px 0; text-align: center; }
     .hm .hcol { width: 38px; font-size: 11px; color: var(--hint); }
     /* 주간 입력 */
-    .wk-emp { width: 100%; padding: 10px 12px; margin: 4px 0 10px; font-size: 15px; font-weight: 600;
-              border: 1px solid rgba(0,0,0,0.15); border-radius: 10px; background: var(--section-bg); }
+    .wk-emp { width: 100%; padding: 10px 12px; margin: 4px 0 10px; font-size: 15px; font-weight: 700;
+              border: 1px solid rgba(127,127,127,0.35); border-radius: 10px; background: var(--section-bg);
+              color: var(--text); }
     .wk-day { display: flex; align-items: center; gap: 5px; padding: 8px 2px; border-bottom: 1px solid rgba(127,127,127,0.18);
               font-variant-numeric: tabular-nums; }
     .wk-mini { padding: 6px 7px; font-size: 12px; font-weight: 700; border-radius: 8px;
@@ -472,9 +473,13 @@
     .wk-tilde { color: var(--hint); }
     .wk-actions { display: flex; gap: 8px; margin: 14px 0 4px; }
     .wk-act { flex: 1; padding: 13px; font-size: 14px; font-weight: 700; border-radius: 10px;
-              border: 1px solid rgba(0,0,0,0.15); background: var(--section-bg); }
-    .wk-act.primary { background: var(--btn); color: #fff; border-color: var(--btn); }
-    .wk-act:disabled { opacity: 0.45; }
+              border: 1px solid rgba(127,127,127,0.35); background: var(--section-bg); color: var(--text); }
+    /* 주간 저장: 변경사항 없으면 회색(비활성) ↔ 변경 생기면 선명한 파랑 + 그림자 */
+    .wk-act.primary { background: var(--btn); color: #fff; border-color: var(--btn);
+                      box-shadow: 0 2px 10px rgba(46,166,255,0.45); }
+    .wk-act.primary:disabled { background: var(--section-bg); color: var(--hint);
+                               border-color: rgba(127,127,127,0.35); box-shadow: none; }
+    .wk-act:disabled { opacity: 1; }
 
     /* 날짜 picker */
     .date-grid {
