@@ -452,19 +452,20 @@
     /* 주간 입력 */
     .wk-emp { width: 100%; padding: 10px 12px; margin: 4px 0 10px; font-size: 15px; font-weight: 600;
               border: 1px solid rgba(0,0,0,0.15); border-radius: 10px; background: var(--section-bg); }
-    .wk-day { display: flex; align-items: center; gap: 6px; padding: 8px 6px; border-bottom: 1px solid rgba(0,0,0,0.06);
-              font-variant-numeric: tabular-nums; flex-wrap: wrap; }
-    .wk-mini { padding: 6px 7px; font-size: 11px; font-weight: 700; border-radius: 8px;
+    .wk-day { display: flex; align-items: center; gap: 4px; padding: 8px 2px; border-bottom: 1px solid rgba(0,0,0,0.06);
+              font-variant-numeric: tabular-nums; }
+    .wk-mini { padding: 6px 6px; font-size: 12px; font-weight: 700; border-radius: 8px;
                border: 1px solid rgba(0,0,0,0.12); background: var(--section-bg); color: var(--hint); flex-shrink: 0; }
     .wk-mini.on-half { background: #5856d6; color: #fff; border-color: #5856d6; }
     .wk-mini.on-hol { background: #e11d48; color: #fff; border-color: #e11d48; }
     .wk-day.is-off { background: rgba(0,0,0,0.03); }
-    .wk-date { width: 74px; font-size: 13px; font-weight: 700; flex-shrink: 0; }
-    .wk-toggle { padding: 6px 10px; font-size: 12px; font-weight: 600; border-radius: 8px;
+    .wk-date { width: 42px; font-size: 13px; font-weight: 700; flex-shrink: 0; line-height: 1.15; }
+    .wk-date .wk-dnum { font-size: 10px; color: var(--hint); font-weight: 600; display: block; }
+    .wk-toggle { padding: 6px 8px; font-size: 12px; font-weight: 600; border-radius: 8px;
                  border: 1px solid rgba(0,0,0,0.12); background: var(--section-bg); flex-shrink: 0; }
     .wk-day.is-off .wk-toggle { color: var(--hint); }
-    .wk-chip { padding: 6px 8px; font-size: 13px; font-weight: 600; border-radius: 8px;
-               border: 1px solid rgba(0,0,0,0.12); background: var(--section-bg); font-variant-numeric: tabular-nums; }
+    .wk-chip { padding: 6px 6px; font-size: 13px; font-weight: 600; border-radius: 8px;
+               border: 1px solid rgba(0,0,0,0.12); background: var(--section-bg); font-variant-numeric: tabular-nums; flex-shrink: 0; }
     .wk-break { font-size: 11px; color: var(--hint); }
     .wk-tilde { color: var(--hint); }
     .wk-actions { display: flex; gap: 8px; margin: 14px 0 4px; }
@@ -2022,16 +2023,16 @@
         const on = e.on && e.in && e.out;
         const edited = (WEEK_EDITS[d] || {})[WK_EMP] && _wkSig(wkEntry(d, WK_EMP)) !== _wkSig(wkBaseEntry(d, WK_EMP));
         h += `<div class="wk-day${on ? '' : ' is-off'}">`
-           + `<span class="wk-date">${d.slice(5).replace('-', '/')} ${WDAYS[i]}${edited ? ' ✏️' : ''}</span>`
+           + `<span class="wk-date">${WDAYS[i]}${edited ? '✏️' : ''}<span class="wk-dnum">${d.slice(5).replace('-', '/')}</span></span>`
            + `<button type="button" class="wk-toggle" onclick="wkToggle('${d}')">${on ? '근무' : '휴무'}</button>`;
         if (on) {
           const emp = STATE.employees.find(x => x.id === WK_EMP);
           h += `<button type="button" class="wk-chip" onclick="wkOpenTime('${d}','in')">${e.in}</button>`
              + `<span class="wk-tilde">~</span>`
              + `<button type="button" class="wk-chip" onclick="wkOpenTime('${d}','out')">${e.out}</button>`
-             + `<button type="button" class="wk-chip wk-break" onclick="wkOpenBreak('${d}')">휴게 ${(e.breakH || 0).toFixed(1)}h</button>`
-             + (emp && emp.grade !== 'Crew' ? `<button type="button" class="wk-mini${e.half ? ' on-half' : ''}" onclick="wkToggleHalf('${d}')">반차</button>` : '')
-             + `<button type="button" class="wk-mini${e.hol ? ' on-hol' : ''}" onclick="wkToggleHol('${d}')">🎌 공휴</button>`;
+             + `<button type="button" class="wk-chip wk-break" onclick="wkOpenBreak('${d}')" title="휴게">☕${(e.breakH || 0).toFixed(1)}</button>`
+             + (emp && emp.grade !== 'Crew' ? `<button type="button" class="wk-mini${e.half ? ' on-half' : ''}" onclick="wkToggleHalf('${d}')" title="반차">반</button>` : '')
+             + `<button type="button" class="wk-mini${e.hol ? ' on-hol' : ''}" onclick="wkToggleHol('${d}')" title="공휴일 근무">🎌</button>`;
         }
         h += `</div>`;
       });
