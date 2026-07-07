@@ -2162,11 +2162,17 @@
     // [hr, hr+1) 안의 실근무 시간(0~1h) — 휴게 구간(bs~be) 제외. 30분 근무 = 0.5
     function heatFrac(p, hr) {
       const toH = (t) => { const [a, b] = t.split(':').map(Number); return a + b / 60; };
-      const a = toH(p.in), b = toH(p.out);
+      const a = toH(p.in);
+      let b = toH(p.out);
+      if (b <= a) b += 24;   // 자정 넘김 (예: 13:30~00:30)
       const s0 = Math.max(a, hr), e0 = Math.min(b, hr + 1);
       let seg = e0 - s0;
       if (seg <= 0) return 0;
-      if (p.bs && p.be) seg -= Math.max(0, Math.min(toH(p.be), e0) - Math.max(toH(p.bs), s0));
+      if (p.bs && p.be) {
+        let bs = toH(p.bs), be = toH(p.be);
+        if (be <= bs) be += 24;
+        seg -= Math.max(0, Math.min(be, e0) - Math.max(bs, s0));
+      }
       return Math.max(0, seg);
     }
     const heatFmt = (n) => { const t = n.toFixed(1); return t.endsWith('.0') ? t.slice(0, -2) : t; };
@@ -2176,7 +2182,11 @@
       const toH = (t) => { const [a, b] = t.split(':').map(Number); return a + b / 60; };
       const people = ds.map(d => dayOwn(d).concat(daySupportIn(d)));
       let lo = 24, hi = 0;
-      people.forEach(list => list.forEach(p => { lo = Math.min(lo, Math.floor(toH(p.in))); hi = Math.max(hi, Math.ceil(toH(p.out))); }));
+      people.forEach(list => list.forEach(p => {
+        const a = toH(p.in); let b = toH(p.out);
+        if (b <= a) b += 24;   // 자정 넘김 → 24시까지 표시 (이후분은 다음날 새벽)
+        lo = Math.min(lo, Math.floor(a)); hi = Math.max(hi, Math.min(24, Math.ceil(b)));
+      }));
       if (lo >= hi) { lo = 7; hi = 22; }
       const label = `${ds[0].slice(5).replace('-', '/')} ~ ${ds[6].slice(5).replace('-', '/')}`;
       let h = `<div class="av-nav"><button type="button" onclick="navWeek(-1)">‹</button><b>👥 시간대 인원 ${label}</b><button type="button" onclick="navWeek(1)">›</button></div>`;
