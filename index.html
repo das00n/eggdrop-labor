@@ -2053,12 +2053,20 @@
     function wkToggle(d) {
       const e = wkEdit(d, WK_EMP);
       e.on = !e.on;
-      if (e.on && !e.in) {
-        // 휴무→근무: 전주 같은 요일 → 직전 패턴 순으로 시간 복원
+      if (e.on && !(e.in && e.out)) {
+        // 휴무→근무: 전주 같은 요일 → 직전 패턴 → 기본값(09:00~18:00) 순으로 시간 채움
+        // (참고 기록이 전혀 없는 직원도 토글이 동작해야 함 — in/out 없으면 렌더가 계속 휴무로 보임)
         const src = wkEntry(addDays(d, -7), WK_EMP);
         const emp = STATE.employees.find(x => x.id === WK_EMP);
-        const base = (src.in && src.out) ? src : (emp && emp.prev ? emp.prev : null);
-        if (base) { e.in = base.in; e.out = base.out; e.breakH = base.breakH || 0; e.break_start = base.break_start || null; e.break_end = base.break_end || null; syncBreak(e); }
+        const base = (src.in && src.out) ? src
+          : (emp && emp.prev && emp.prev.in && emp.prev.out ? emp.prev : null);
+        if (base) {
+          e.in = base.in; e.out = base.out; e.breakH = base.breakH || 0;
+          e.break_start = base.break_start || null; e.break_end = base.break_end || null;
+        } else {
+          e.in = '09:00'; e.out = '18:00';
+        }
+        syncBreak(e);
       }
       renderWInput();
     }
