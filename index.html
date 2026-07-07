@@ -439,15 +439,15 @@
     .av-nav button { width: 38px; height: 32px; border: 1px solid rgba(0,0,0,0.12); background: var(--section-bg); border-radius: 8px; font-size: 16px; }
     .av-note { font-size: 11px; color: var(--hint); margin: 0 0 8px; }
     .wk-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-    table.wk { border-collapse: collapse; font-size: 11px; font-variant-numeric: tabular-nums; }
-    .wk th, .wk td { border: 1px solid rgba(0,0,0,0.08); padding: 4px 6px; text-align: center; white-space: nowrap; }
+    table.wk { border-collapse: collapse; font-size: 11px; font-variant-numeric: tabular-nums; width: 100%; }
+    .wk th, .wk td { border: 1px solid rgba(127,127,127,0.25); padding: 4px 3px; text-align: center; white-space: nowrap; }
     .wk th { background: var(--section-bg); }
     .wk td.off { background: rgba(0,0,0,0.05); color: #b8b8b8; }
     .wk .dcol { position: sticky; left: 0; background: var(--section-bg); font-weight: 700; z-index: 1; }
     .wk-send { display: block; width: 100%; margin: 14px 0 4px; padding: 13px; font-size: 14px; font-weight: 700;
                background: var(--btn); color: #fff; border: none; border-radius: 10px; }
     table.hm { border-collapse: collapse; font-size: 12px; width: 100%; table-layout: fixed; font-variant-numeric: tabular-nums; }
-    .hm th, .hm td { border: 1px solid rgba(0,0,0,0.08); padding: 5px 0; text-align: center; }
+    .hm th, .hm td { border: 1px solid rgba(127,127,127,0.25); padding: 5px 0; text-align: center; }
     .hm .hcol { width: 38px; font-size: 11px; color: var(--hint); }
     /* 주간 입력 */
     .wk-emp { width: 100%; padding: 10px 12px; margin: 4px 0 10px; font-size: 15px; font-weight: 600;
@@ -2202,7 +2202,8 @@
           const hasAny = people[i].length > 0;
           // 0명=빨강(경고) · 1명=초록(양호) · 많아질수록 노랑→주황(인건비 주의)
           const bg = !hasAny ? '' : (n <= 0 ? '#fbd5d5' : n < 1.5 ? '#d9efdc' : n < 2.5 ? '#fdf3d7' : n < 3.5 ? '#fde3c3' : '#f7c59a');
-          h += `<td style="background:${bg}" onclick="heatCell(${i},${hr})">${hasAny ? heatFmt(n) : ''}</td>`;
+          const st = bg ? `background:${bg};color:#1c1c28;font-weight:700` : '';
+          h += `<td style="${st}" onclick="heatCell(${i},${hr})">${hasAny ? heatFmt(n) : ''}</td>`;
         });
         h += `</tr>`;
       }
