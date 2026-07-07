@@ -452,21 +452,23 @@
     /* 주간 입력 */
     .wk-emp { width: 100%; padding: 10px 12px; margin: 4px 0 10px; font-size: 15px; font-weight: 600;
               border: 1px solid rgba(0,0,0,0.15); border-radius: 10px; background: var(--section-bg); }
-    .wk-day { display: flex; align-items: center; gap: 4px; padding: 8px 2px; border-bottom: 1px solid rgba(0,0,0,0.06);
+    .wk-day { display: flex; align-items: center; gap: 5px; padding: 8px 2px; border-bottom: 1px solid rgba(127,127,127,0.18);
               font-variant-numeric: tabular-nums; }
-    .wk-mini { padding: 6px 6px; font-size: 12px; font-weight: 700; border-radius: 8px;
-               border: 1px solid rgba(0,0,0,0.12); background: var(--section-bg); color: var(--hint); flex-shrink: 0; }
+    .wk-mini { padding: 6px 7px; font-size: 12px; font-weight: 700; border-radius: 8px;
+               border: 1px solid rgba(127,127,127,0.35); background: var(--section-bg); color: var(--text); opacity: 0.75; flex-shrink: 0; }
+    .wk-mini.on-half, .wk-mini.on-hol { opacity: 1; }
     .wk-mini.on-half { background: #5856d6; color: #fff; border-color: #5856d6; }
     .wk-mini.on-hol { background: #e11d48; color: #fff; border-color: #e11d48; }
     .wk-day.is-off { background: rgba(0,0,0,0.03); }
     .wk-date { width: 42px; font-size: 13px; font-weight: 700; flex-shrink: 0; line-height: 1.15; }
     .wk-date .wk-dnum { font-size: 10px; color: var(--hint); font-weight: 600; display: block; }
     .wk-toggle { padding: 6px 8px; font-size: 12px; font-weight: 600; border-radius: 8px;
-                 border: 1px solid rgba(0,0,0,0.12); background: var(--section-bg); flex-shrink: 0; }
+                 border: 1px solid rgba(127,127,127,0.35); background: var(--section-bg); color: var(--text); flex-shrink: 0; }
     .wk-day.is-off .wk-toggle { color: var(--hint); }
-    .wk-chip { padding: 6px 6px; font-size: 13px; font-weight: 600; border-radius: 8px;
-               border: 1px solid rgba(0,0,0,0.12); background: var(--section-bg); font-variant-numeric: tabular-nums; flex-shrink: 0; }
-    .wk-break { font-size: 11px; color: var(--hint); }
+    .wk-chip { padding: 6px 7px; font-size: 13.5px; font-weight: 700; border-radius: 8px;
+               border: 1px solid rgba(127,127,127,0.35); background: var(--section-bg); color: var(--text);
+               font-variant-numeric: tabular-nums; flex-shrink: 0; }
+    .wk-break { font-size: 12px; color: var(--text); opacity: 0.75; font-weight: 600; }
     .wk-tilde { color: var(--hint); }
     .wk-actions { display: flex; gap: 8px; margin: 14px 0 4px; }
     .wk-act { flex: 1; padding: 13px; font-size: 14px; font-weight: 700; border-radius: 10px;
@@ -2032,7 +2034,7 @@
              + `<button type="button" class="wk-chip" onclick="wkOpenTime('${d}','out')">${e.out}</button>`
              + `<button type="button" class="wk-chip wk-break" onclick="wkOpenBreak('${d}')" title="휴게">☕${(e.breakH || 0).toFixed(1)}</button>`
              + (emp && emp.grade !== 'Crew' ? `<button type="button" class="wk-mini${e.half ? ' on-half' : ''}" onclick="wkToggleHalf('${d}')" title="반차">반</button>` : '')
-             + `<button type="button" class="wk-mini${e.hol ? ' on-hol' : ''}" onclick="wkToggleHol('${d}')" title="공휴일 근무">🎌</button>`;
+             + `<button type="button" class="wk-mini${e.hol ? ' on-hol' : ''}" onclick="wkToggleHol('${d}')" title="공휴일 근무">🎌공휴</button>`;
         }
         h += `</div>`;
       });
