@@ -554,6 +554,9 @@
   <section id="view-heat" class="alt-view" style="display:none"></section>
 
   <footer>
+    <div style="font-size:11.5px;color:var(--hint);margin-bottom:6px">
+      ⚠️ 실제 근무시간이 스케줄과 다르면 <b>퇴근 전에 반드시 수정</b>해 주세요. (인건비·담당 매출이 이 기록으로 계산됩니다)
+    </div>
     <div class="summary-amount" id="sum-amount">0명 · 0h 근무</div>
     <button class="save-btn" id="save-btn" onclick="onSave()" disabled>💾 저장</button>
   </footer>
@@ -1995,7 +1998,7 @@
       const label = `${ds[0].slice(5).replace('-', '/')} ~ ${ds[6].slice(5).replace('-', '/')}`;
       const dirty = wkDirtyDates();
       let h = `<div class="av-nav"><button type="button" onclick="navWeek(-1)">‹</button><b>🗓 주간 입력 ${label}</b><button type="button" onclick="navWeek(1)">›</button></div>`;
-      h += `<div class="av-note">직원을 골라 한 주를 한 번에 입력합니다. [💾 주간 저장] 전까지는 이 화면에만 보관됩니다.</div>`;
+      h += `<div class="av-note">직원을 골라 한 주를 한 번에 입력합니다. [💾 주간 저장] 전까지는 이 화면에만 보관됩니다.<br>⚠️ 실제 근무시간이 스케줄과 다르면 <b>퇴근 전에 반드시 수정</b>해 주세요.</div>`;
       h += `<select class="wk-emp" onchange="wkSelectEmp(this.value)">`
          + STATE.employees.map(e => `<option value="${e.id}"${e.id === WK_EMP ? ' selected' : ''}>${e.name} (${e.grade})</option>`).join('')
          + `</select>`;
