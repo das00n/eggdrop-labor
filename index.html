@@ -450,6 +450,9 @@
     .wk th, .wk td { border: 1px solid rgba(127,127,127,0.25); padding: 4px 3px; text-align: center; white-space: nowrap; }
     .wk th { background: var(--section-bg); }
     .wk td.off { background: rgba(0,0,0,0.05); color: #b8b8b8; }
+    .wk td.lv { color: #0d9488; font-weight: 700; }
+    @media (prefers-color-scheme: dark) { .wk td.lv { color: #5eead4; } }
+    .wk .mk { font-size: 9px; font-weight: 700; color: #e11d48; }
     .wk .dcol { position: sticky; left: 0; background: var(--section-bg); font-weight: 700; z-index: 1; }
     .wk-send { display: block; width: 100%; margin: 14px 0 4px; padding: 13px; font-size: 14px; font-weight: 700;
                background: var(--btn); color: #fff; border: none; border-radius: 10px; }
@@ -1988,13 +1991,17 @@
       const out = [];
       if (dateStr === STATE.date) {
         STATE.employees.forEach(e => { const t = STATE.entries[e.id];
-          if (t && t.on && t.in && t.out) out.push({ id: e.id, name: e.name, in: t.in, out: t.out, bs: t.break_start || null, be: t.break_end || null }); });
+          if (t && t.on && t.in && t.out) out.push({ id: e.id, name: e.name, in: t.in, out: t.out, bs: t.break_start || null, be: t.break_end || null, half: !!t.half, hol: !!t.hol }); });
       } else {
         const m = (STATE.prev_by_date_emp || {})[dateStr] || {};
         STATE.employees.forEach(e => { const t = m[e.id];
-          if (t && t.in && t.out) out.push({ id: e.id, name: e.name, in: t.in, out: t.out, bs: t.break_start || null, be: t.break_end || null }); });
+          if (t && t.in && t.out) out.push({ id: e.id, name: e.name, in: t.in, out: t.out, bs: t.break_start || null, be: t.break_end || null, half: !!t.half, hol: !!t.hol }); });
       }
       return out;
+    }
+    function dayLeave(dateStr, empId) {
+      if (dateStr === STATE.date) { const t = STATE.entries[empId]; return !!(t && !t.on && t.leave); }
+      return !!(((STATE.prev_leave_by_date || {})[dateStr] || {})[empId]);
     }
     function daySupportIn(dateStr) {
       const list = dateStr === STATE.date ? (STATE.supportEntries || []) : ((STATE.prev_support_by_date || {})[dateStr] || []);
@@ -2168,6 +2175,7 @@
       const ds = weekDates();
       const weekIds = new Set();
       ds.forEach(d => dayOwn(d).forEach(o => weekIds.add(o.id)));
+      ds.forEach(d => STATE.employees.forEach(e => { if (dayLeave(d, e.id)) weekIds.add(e.id); }));   // 연차만 있는 주도 표시
       const emps = STATE.employees.filter(e => weekIds.has(e.id));   // 그 주 근무자만
       const label = `${ds[0].slice(5).replace('-', '/')} ~ ${ds[6].slice(5).replace('-', '/')}`;
       let h = `<div class="av-nav"><button type="button" onclick="navWeek(-1)">‹</button><b>📆 주간표 ${label}</b><button type="button" onclick="navWeek(1)">›</button></div>`;
@@ -2177,7 +2185,14 @@
       h += `<div class="wk-wrap"><table class="wk"><tr><th class="dcol">직원</th>${ds.map((d, i) => `<th>${d.slice(5).replace('-', '/')}<br>${WDAYS[i]}</th>`).join('')}</tr>`;
       emps.forEach(e => {
         h += `<tr><td class="dcol">${e.name}</td>`;
-        h += ds.map((d, i) => { const o = dayMaps[i][e.id]; return o ? `<td>${o.in}<br>${o.out}</td>` : '<td class="off">—</td>'; }).join('');
+        h += ds.map((d, i) => {
+          const o = dayMaps[i][e.id];
+          if (o) {
+            const mk = (o.half ? '반차' : '') + (o.half && o.hol ? '·' : '') + (o.hol ? '🎌' : '');
+            return `<td>${o.in}<br>${o.out}${mk ? `<br><span class="mk">${mk}</span>` : ''}</td>`;
+          }
+          return dayLeave(d, e.id) ? '<td class="lv">연차</td>' : '<td class="off">—</td>';
+        }).join('');
         h += `</tr>`;
       });
       if (supCnt.some(n => n > 0)) {
