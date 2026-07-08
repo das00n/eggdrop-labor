@@ -730,6 +730,23 @@
     </div>
   </div>
 
+  <!-- 직급 변경 Modal (운영자 전용) -->
+  <div class="modal-backdrop" id="gc-modal">
+    <div class="modal">
+      <h2 class="modal-title" id="gc-title">직급 변경</h2>
+      <p class="modal-sub">정직원 간(SV/SM/AM/Pro) 변경만 가능합니다. 크루 전환은 신규 등록으로 진행하세요.</p>
+      <div class="modal-section-title">새 직급</div>
+      <div class="grade-picker" id="gc-grades"></div>
+      <div class="modal-section-title" style="margin-top:12px">발효일 (이 날짜부터 새 직급 적용)</div>
+      <input class="form-input" id="gc-date" type="date">
+      <p class="modal-sub" id="gc-warn" style="margin-top:8px"></p>
+      <div class="modal-actions">
+        <button class="modal-btn secondary" onclick="closeGradeModal()">취소</button>
+        <button class="modal-btn primary" onclick="confirmGradeChange()">변경</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     // ───────── Telegram WebApp 초기화 ─────────
     const tg = window.Telegram?.WebApp;
@@ -1425,7 +1442,9 @@
         <div class="emp-name-row">
           <div>
             <span class="emp-name">${emp.name}</span>
-            <span class="emp-grade ${emp.grade}">${emp.grade}</span>
+            ${(STATE.is_operator && !emp.isNew && emp.grade !== 'Crew')
+              ? `<span class="emp-grade ${emp.grade}" style="cursor:pointer" onclick="openGradeModal('${emp.id}')" title="직급 변경">${emp.grade} ✎</span>`
+              : `<span class="emp-grade ${emp.grade}">${emp.grade}</span>`}
             ${crewRateChip}
           </div>
           <div style="display:flex; gap:6px; align-items:center">
@@ -1806,6 +1825,64 @@
 
     // ───────── 직원 추가 modal (신규 추가 전용) ─────────
     const GRADES = ['SV','SM','AM','Pro','Crew'];
+    const FT_GRADES = ['SV','SM','AM','Pro'];
+
+    // ───────── 직급 변경 (운영자 전용) ─────────
+    let GC_CTX = null;
+    function _todayStr() {
+      const d = new Date(); const p = n => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+    }
+    function openGradeModal(empId) {
+      const emp = STATE.employees.find(e => e.id === empId);
+      if (!emp) return;
+      GC_CTX = { empId, name: emp.name, from: emp.grade, to: null };
+      document.getElementById('gc-title').textContent = `${emp.name} 직급 변경 (현재 ${emp.grade})`;
+      const di = document.getElementById('gc-date');
+      di.value = _todayStr(); di.onchange = _gcUpdateWarn;
+      const gp = document.getElementById('gc-grades');
+      gp.innerHTML = '';
+      FT_GRADES.filter(g => g !== emp.grade).forEach(g => {
+        const chip = document.createElement('div');
+        chip.className = 'grade-chip';
+        chip.textContent = g;
+        chip.onclick = () => { GC_CTX.to = g; markSelected(gp, chip); _gcUpdateWarn(); };
+        gp.appendChild(chip);
+      });
+      _gcUpdateWarn();
+      document.getElementById('gc-modal').classList.add('show');
+    }
+    function _gcUpdateWarn() {
+      const w = document.getElementById('gc-warn');
+      const eff = document.getElementById('gc-date').value;
+      if (eff && eff < _todayStr()) {
+        w.innerHTML = '⚠️ <b style="color:#e11d48">과거 발효일입니다.</b> ' + eff.slice(5).replace('-','/') + '부터 오늘까지의 인건비·연장 등 성과 지표가 새 직급으로 <b>재계산</b>됩니다. 신중히 확인하세요.';
+      } else {
+        w.textContent = '이 날짜부터 저장되는 스케줄에 새 직급이 적용됩니다.';
+      }
+    }
+    function closeGradeModal() {
+      document.getElementById('gc-modal').classList.remove('show');
+      GC_CTX = null;
+    }
+    function confirmGradeChange() {
+      if (!GC_CTX || !GC_CTX.to) { say('새 직급을 선택해주세요'); return; }
+      const eff = document.getElementById('gc-date').value;
+      if (!eff) { say('발효일을 선택해주세요'); return; }
+      if (!tg) { say('텔레그램 환경에서만 변경할 수 있습니다.'); return; }
+      const past = eff < _todayStr();
+      const msg = past
+        ? `${GC_CTX.name}: ${GC_CTX.from} → ${GC_CTX.to}\n발효일 ${eff} (과거)\n\n⚠️ ${eff}부터 오늘까지 인건비·성과 지표가 재계산됩니다. 정말 변경하시겠어요?`
+        : `${GC_CTX.name}: ${GC_CTX.from} → ${GC_CTX.to}\n발효일 ${eff}\n\n변경하시겠어요?`;
+      const go = () => {
+        tg.sendData(JSON.stringify({ type: 'grade_change', store: STATE.store,
+          change: { source_id: GC_CTX.empId, name: GC_CTX.name, from: GC_CTX.from, to: GC_CTX.to, effective: eff } }));
+        setTimeout(() => { try { tg.close(); } catch (e) {} }, 150);
+      };
+      if (tg.showConfirm) tg.showConfirm(msg, ok => { if (ok) go(); });
+      else if (confirm(msg)) go();
+    }
+
     function openAddModal() {
       AM_CTX = { name: '', grade: null, crew_rate: 13000 };
       document.getElementById('add-name').value = '';
