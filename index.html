@@ -157,12 +157,18 @@
     .break-chip { background: rgba(255,149,0,0.15); color: #ff9500; }
     .half-row { display: flex; margin-top: 8px; }
     .half-chip {
-      padding: 7px 16px; border-radius: 8px; font-size: 13px; font-weight: 600;
+      padding: 7px 16px; border-radius: 8px; font-size: 13px; font-weight: 700;
       white-space: nowrap; cursor: pointer; user-select: none;
       display: inline-flex; align-items: center; gap: 4px;
-      background: rgba(88,86,214,0.12); color: #5856d6; border: 1px solid rgba(88,86,214,0.35);
+      background: rgba(88,86,214,0.12); color: #5856d6; border: 1.5px solid rgba(88,86,214,0.5);
     }
-    .half-chip.active { background: #5856d6; color: #fff; border-color: #5856d6; }
+    .half-chip.leave { background: rgba(13,148,136,0.12); color: #0d9488; border-color: rgba(13,148,136,0.5); }
+    /* 다크모드: 저채도 남색 배경에서 보라/청록이 묻힘 → 밝은 톤으로 */
+    @media (prefers-color-scheme: dark) {
+      .half-chip { background: rgba(157,155,255,0.16); color: #b3b1ff; border-color: rgba(157,155,255,0.65); }
+      .half-chip.leave { background: rgba(45,212,191,0.14); color: #5eead4; border-color: rgba(45,212,191,0.6); }
+    }
+    .half-chip.active { background: #5856d6; color: #fff !important; border-color: #5856d6; }
     .half-chip.leave.active { background: #0d9488; border-color: #0d9488; }
     .work-hours {
       padding: 8px 10px; font-size: 14px; font-weight: 600;
