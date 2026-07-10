@@ -2263,7 +2263,7 @@
       ds.forEach(d => dayOwn(d).forEach(o => { weekIds.add(o.id); if (o.ex) extras.set(o.id, o.name); }));
       ds.forEach(d => STATE.employees.forEach(e => { if (dayLeave(d, e.id)) weekIds.add(e.id); }));   // 연차만 있는 주도 표시
       const emps = STATE.employees.filter(e => weekIds.has(e.id))   // 그 주 근무자만
-        .concat([...extras].map(([id, name]) => ({ id, name: `${name} ※` })));   // + 명단 외 근무자
+        .concat([...extras].map(([id, name]) => ({ id, name: `※${name}` })));   // + 명단 외 근무자
       // 지원 근무 — 사람별 행 (이름(지원) · 출퇴근 시각)
       const supRows = new Map();   // name → {요일idx: o}
       ds.forEach((d, i) => daySupportIn(d).forEach(o => {
