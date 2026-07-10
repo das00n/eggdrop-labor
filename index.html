@@ -2064,16 +2064,24 @@
     function renderAltViews() { renderWInput(); renderWeekView(); renderHeatView(); }
 
     // 해당 일자의 자체 근무(직원별). 오늘 = 입력 중 값, 그 외 = 저장분(prev).
+    //   명단 외(퇴사·이동) 직원의 저장분도 ex:true로 포함 — 주간표·시간대 인원에 표시.
     function dayOwn(dateStr) {
       const out = [];
+      const push = (id, name, t, ex) => out.push({ id, name, in: t.in, out: t.out, bs: t.break_start || null, be: t.break_end || null, half: !!t.half, hol: !!t.hol, ex: !!ex });
+      const m = (STATE.prev_by_date_emp || {})[dateStr] || {};
       if (dateStr === STATE.date) {
         STATE.employees.forEach(e => { const t = STATE.entries[e.id];
-          if (t && t.on && t.in && t.out) out.push({ id: e.id, name: e.name, in: t.in, out: t.out, bs: t.break_start || null, be: t.break_end || null, half: !!t.half, hol: !!t.hol }); });
+          if (t && t.on && t.in && t.out) push(e.id, e.name, t, false); });
       } else {
-        const m = (STATE.prev_by_date_emp || {})[dateStr] || {};
         STATE.employees.forEach(e => { const t = m[e.id];
-          if (t && t.in && t.out) out.push({ id: e.id, name: e.name, in: t.in, out: t.out, bs: t.break_start || null, be: t.break_end || null, half: !!t.half, hol: !!t.hol }); });
+          if (t && t.in && t.out) push(e.id, e.name, t, false); });
       }
+      const rosterIds = new Set(STATE.employees.map(e => e.id));
+      Object.keys(m).forEach(k => {
+        if (rosterIds.has(k)) return;
+        const t = m[k];
+        if (t && t.in && t.out) push(k, t.name || '(명단 외)', t, true);
+      });
       return out;
     }
     function dayLeave(dateStr, empId) {
@@ -2251,14 +2259,20 @@
       const el = document.getElementById('view-week');
       const ds = weekDates();
       const weekIds = new Set();
-      ds.forEach(d => dayOwn(d).forEach(o => weekIds.add(o.id)));
+      const extras = new Map();   // 명단 외(퇴사·이동) 직원 id → 이름
+      ds.forEach(d => dayOwn(d).forEach(o => { weekIds.add(o.id); if (o.ex) extras.set(o.id, o.name); }));
       ds.forEach(d => STATE.employees.forEach(e => { if (dayLeave(d, e.id)) weekIds.add(e.id); }));   // 연차만 있는 주도 표시
-      const emps = STATE.employees.filter(e => weekIds.has(e.id));   // 그 주 근무자만
+      const emps = STATE.employees.filter(e => weekIds.has(e.id))   // 그 주 근무자만
+        .concat([...extras].map(([id, name]) => ({ id, name: `${name} ※` })));   // + 명단 외 근무자
+      // 지원 근무 — 사람별 행 (이름(지원) · 출퇴근 시각)
+      const supRows = new Map();   // name → {요일idx: o}
+      ds.forEach((d, i) => daySupportIn(d).forEach(o => {
+        const r = supRows.get(o.name) || {}; r[i] = o; supRows.set(o.name, r);
+      }));
       const label = `${ds[0].slice(5).replace('-', '/')} ~ ${ds[6].slice(5).replace('-', '/')}`;
       let h = `<div class="av-nav"><button type="button" onclick="navWeek(-1)">‹</button><b>📆 주간표 ${label}</b><button type="button" onclick="navWeek(1)">›</button></div>`;
-      h += `<div class="av-note">저장된 스케줄 기준 (오늘 날짜는 입력 중인 값 반영) · 최근 3개월 조회 가능</div>`;
+      h += `<div class="av-note">저장된 스케줄 기준 (오늘 날짜는 입력 중인 값 반영) · 최근 3개월 조회 가능${extras.size ? ' · ※ = 현재 명단 외(퇴사·이동)' : ''}${supRows.size ? ' · (지원) = 타 매장에서 지원' : ''}</div>`;
       const dayMaps = ds.map(d => { const m = {}; dayOwn(d).forEach(o => { m[o.id] = o; }); return m; });
-      const supCnt = ds.map(d => daySupportIn(d).length);
       h += `<div class="wk-wrap"><table class="wk"><tr><th class="dcol">직원</th>${ds.map((d, i) => `<th>${d.slice(5).replace('-', '/')}<br>${WDAYS[i]}</th>`).join('')}</tr>`;
       emps.forEach(e => {
         h += `<tr><td class="dcol">${e.name}</td>`;
@@ -2272,10 +2286,12 @@
         }).join('');
         h += `</tr>`;
       });
-      if (supCnt.some(n => n > 0)) {
-        h += `<tr><td class="dcol">지원</td>${supCnt.map(n => n ? `<td>+${n}</td>` : '<td class="off">—</td>').join('')}</tr>`;
-      }
-      if (!emps.length) h += `<tr><td colspan="8" class="off" style="padding:14px">이 주에 저장된 근무 기록이 없습니다</td></tr>`;
+      supRows.forEach((r, name) => {
+        h += `<tr><td class="dcol">${name}</td>`;
+        h += ds.map((d, i) => r[i] ? `<td>${r[i].in}<br>${r[i].out}</td>` : '<td class="off">—</td>').join('');
+        h += `</tr>`;
+      });
+      if (!emps.length && !supRows.size) h += `<tr><td colspan="8" class="off" style="padding:14px">이 주에 저장된 근무 기록이 없습니다</td></tr>`;
       h += `</table></div>`;
       h += `<button type="button" class="wk-send" onclick="sendWeeklyTable()">📨 이 주간표를 텔레그램으로 보내기</button>`;
       el.innerHTML = h;
