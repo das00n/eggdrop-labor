@@ -1287,7 +1287,12 @@
       // 봇 prev도 _prev_window_start로 동일하게 전월까지 로드해야 안전(빈 화면 저장이 전월 삭제 방지).
       const t = new Date();
       const cur = t.getFullYear() * 12 + t.getMonth();
-      const minIdx = cur - (t.getDate() <= 3 ? 1 : 0);
+      let minIdx = cur - (t.getDate() <= 3 ? 1 : 0);
+      // ⏳ 임시 예외(2026-07-31까지): 인천공항점 신규 온보딩 — 6월 스케줄 소급 입력 허용.
+      //    만료 후 자동 원복(코드 삭제는 8월에 정리). 봇 prev는 최근 3개월 로드라 6월 포함 — 안전.
+      if (STATE.store === '인천공항점' && t.getTime() <= new Date('2026-07-31T23:59:59+09:00').getTime()) {
+        minIdx = Math.min(minIdx, 2026 * 12 + 5);   // 2026년 6월 (0-based month 5)
+      }
       return { minIdx, maxIdx: cur + 1 };
     }
     function openDateModal() {
