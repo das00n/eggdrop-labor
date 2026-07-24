@@ -975,10 +975,14 @@
       }
       const bn = document.getElementById('restore-banner');
       bn.style.display = 'block';
-      document.getElementById('restore-apply').onclick = () => { applyBackup(b); bn.style.display = 'none'; };
+      adjustHeaderOffset();
+      document.getElementById('restore-apply').onclick = () => {
+        applyBackup(b); bn.style.display = 'none'; adjustHeaderOffset();
+      };
       document.getElementById('restore-dismiss').onclick = () => {
         try { localStorage.removeItem(_backupKey()); } catch (e) {}
         bn.style.display = 'none';
+        adjustHeaderOffset();
       };
     }
     function applyBackup(b) {
@@ -1014,13 +1018,25 @@
       adjustHeaderOffset();
     }
 
-    // 고정 헤더 실제 높이만큼 main 상단 여백 — 헤더가 본문을 가리지 않도록
+    // 고정 헤더 실제 높이만큼 본문 상단 여백 — 헤더가 본문/배너를 가리지 않도록.
+    //   err/restore 배너가 보이면 첫 배너가 여백을 담당 (배너가 헤더 밑에 깔려
+    //   빈 박스+공백으로 보이던 문제 수정 — 2026-07-24 인천공항점 보고).
     function adjustHeaderOffset() {
       const hdr = document.querySelector('header');
       const main = document.getElementById('main');
-      if (hdr && main) {
-        main.style.paddingTop = (hdr.offsetHeight + 8) + 'px';
-      }
+      if (!hdr || !main) return;
+      const off = (hdr.offsetHeight + 8) + 'px';
+      const banners = ['err-banner', 'restore-banner']
+        .map(id => document.getElementById(id)).filter(Boolean);
+      banners.forEach(b => { b.style.marginTop = ''; });
+      const vis = banners.filter(b => b.style.display !== 'none');
+      const pt = vis.length ? '8px' : off;
+      if (vis.length) vis[0].style.marginTop = off;
+      main.style.paddingTop = pt;
+      ['view-winput', 'view-week', 'view-heat'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.paddingTop = pt;
+      });
     }
     window.addEventListener('resize', adjustHeaderOffset);
 
@@ -2386,6 +2402,7 @@
       banner.textContent = '⚠️ ' + msg;
       banner.style.display = 'block';
       document.getElementById('loading').style.display = 'none';
+      adjustHeaderOffset();
     }
 
     // ───────── 시작 ─────────
