@@ -454,6 +454,7 @@
     @media (prefers-color-scheme: dark) { .wk td.lv { color: #5eead4; } }
     .wk .mk { font-size: 9px; font-weight: 700; color: #e11d48; }
     .wk .dcol { position: sticky; left: 0; background: var(--section-bg); font-weight: 700; z-index: 1; }
+    .wk .grade { display: block; font-size: 9px; font-weight: 700; color: var(--hint); line-height: 1.15; }
     .wk-send { display: block; width: 100%; margin: 14px 0 4px; padding: 13px; font-size: 14px; font-weight: 700;
                background: var(--btn); color: #fff; border: none; border-radius: 10px; }
     table.hm { border-collapse: collapse; font-size: 12px; width: 100%; table-layout: fixed; font-variant-numeric: tabular-nums; }
@@ -2112,7 +2113,7 @@
     function daySupportIn(dateStr) {
       const list = dateStr === STATE.date ? (STATE.supportEntries || []) : ((STATE.prev_support_by_date || {})[dateStr] || []);
       return list.filter(s => s.direction === 'in' && s.in && s.out)
-                 .map(s => ({ id: null, name: (s.name || '지원') + '(지원)', in: s.in, out: s.out, bs: s.break_start || null, be: s.break_end || null }));
+                 .map(s => ({ id: null, name: (s.name || '지원') + '(지원)', grade: s.grade || null, in: s.in, out: s.out, bs: s.break_start || null, be: s.break_end || null }));
     }
 
     // ───────── 주간 입력 (직원별) — 하루 입력과 병행하는 두 번째 입력 방식 ─────────
@@ -2296,7 +2297,8 @@
       const dayMaps = ds.map(d => { const m = {}; dayOwn(d).forEach(o => { m[o.id] = o; }); return m; });
       h += `<div class="wk-wrap"><table class="wk"><tr><th class="dcol">직원</th>${ds.map((d, i) => `<th>${d.slice(5).replace('-', '/')}<br>${WDAYS[i]}</th>`).join('')}</tr>`;
       emps.forEach(e => {
-        h += `<tr><td class="dcol">${e.name}</td>`;
+        // 직급 — 이름 위 줄, 가운데 정렬 (명단 외 ※ 직원은 직급 미상 → 생략)
+        h += `<tr><td class="dcol">${e.grade ? `<span class="grade">${e.grade}</span>` : ''}${e.name}</td>`;
         h += ds.map((d, i) => {
           const o = dayMaps[i][e.id];
           if (o) {
@@ -2308,7 +2310,8 @@
         h += `</tr>`;
       });
       supRows.forEach((r, name) => {
-        h += `<tr><td class="dcol">${name}</td>`;
+        const g = Object.values(r).map(x => x.grade).find(Boolean);
+        h += `<tr><td class="dcol">${g ? `<span class="grade">${g}</span>` : ''}${name}</td>`;
         h += ds.map((d, i) => r[i] ? `<td>${r[i].in}<br>${r[i].out}</td>` : '<td class="off">—</td>').join('');
         h += `</tr>`;
       });
