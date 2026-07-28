@@ -1694,7 +1694,7 @@
       for (let h = 0; h <= 24; h++) {
         const opt = document.createElement('option');
         opt.value = String(h).padStart(2,'0'); opt.textContent = String(h).padStart(2,'0');
-        if (TM_CTX.minMin !== null && h * 60 + 45 <= TM_CTX.minMin) opt.disabled = true;
+        if (TM_CTX.minMin !== null && h * 60 + 50 <= TM_CTX.minMin) opt.disabled = true;  // 50 = 마지막 분 옵션
         hourSel.appendChild(opt);
       }
       hourSel.onchange = () => {
@@ -1711,13 +1711,18 @@
       renderTMSelects();
       document.getElementById('time-modal').classList.add('show');
     }
-    // 분 옵션 생성(선택된 시 기준, 출근 이전 분은 비활성)
+    // 분 옵션 생성(선택된 시 기준, 출근 이전 분은 비활성) — 10분 단위 (2026-07-28, 구 15분)
     function buildTMMins() {
       const hourSel = document.getElementById('tm-hour');
       const minSel = document.getElementById('tm-min');
       const curH = parseInt(hourSel.value, 10);
+      const mins = [0, 10, 20, 30, 40, 50];
+      // 기존 15분 단위 저장값(예: :15, :45)도 표시·유지되도록 현재 분을 옵션에 포함
+      const curM = TM_CTX && TM_CTX.current ? parseInt(TM_CTX.current.split(':')[1], 10) : NaN;
+      if (Number.isFinite(curM) && !mins.includes(curM)) mins.push(curM);
+      mins.sort((a, b) => a - b);
       minSel.innerHTML = '';
-      [0, 15, 30, 45].forEach(m => {
+      mins.forEach(m => {
         const opt = document.createElement('option');
         opt.value = String(m).padStart(2,'0'); opt.textContent = String(m).padStart(2,'0');
         if (TM_CTX && TM_CTX.minMin !== null && curH * 60 + m <= TM_CTX.minMin) opt.disabled = true;
