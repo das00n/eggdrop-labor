@@ -554,6 +554,7 @@
       <button type="button" class="tab" data-tab="winput" onclick="switchTab('winput')">🗓 주간입력</button>
       <button type="button" class="tab" data-tab="week" onclick="switchTab('week')">📆 주간표</button>
       <button type="button" class="tab" data-tab="heat" onclick="switchTab('heat')">👥 시간대</button>
+      <button type="button" class="tab" data-tab="my" onclick="switchTab('my')">🙋 내 기록</button>
     </div>
   </header>
 
@@ -576,6 +577,8 @@
   <section id="view-winput" class="alt-view" style="display:none"></section>
   <section id="view-week" class="alt-view" style="display:none"></section>
   <section id="view-heat" class="alt-view" style="display:none"></section>
+  <!-- 내 기록 — 본인 근무기록 열람 + 이의신청 (텔레그램 신원 기반, 본인 것만 표시) -->
+  <section id="view-my" class="alt-view" style="display:none"></section>
 
   <footer>
     <div style="font-size:11.5px;color:var(--hint);margin-bottom:6px">
@@ -2086,11 +2089,13 @@
       document.getElementById('view-winput').style.display = t === 'winput' ? '' : 'none';
       document.getElementById('view-week').style.display = t === 'week' ? '' : 'none';
       document.getElementById('view-heat').style.display = t === 'heat' ? '' : 'none';
+      document.getElementById('view-my').style.display = t === 'my' ? '' : 'none';
       if (t !== 'day') {
         if (!WEEK_START) WEEK_START = weekStartOf(STATE.date);
-        renderAltViews();
+        if (t === 'my') { renderMyView(); if (!MY.data && !MY.loading && !MY.error) myLoad(); }
+        else renderAltViews();
         const pt = document.getElementById('main').style.paddingTop;
-        ['view-winput', 'view-week', 'view-heat'].forEach(id => { document.getElementById(id).style.paddingTop = pt; });
+        ['view-winput', 'view-week', 'view-heat', 'view-my'].forEach(id => { document.getElementById(id).style.paddingTop = pt; });
       }
     }
     function navWeek(n) { WEEK_START = addDays(WEEK_START, 7 * n); renderAltViews(); }
@@ -2409,6 +2414,180 @@
         .map(p => ({ p, f: heatFrac(p, hr) })).filter(x => x.f > 1e-6)
         .map(x => x.f < 0.999 ? `${x.p.name} (${heatFmt(x.f)}h)` : x.p.name);
       say(`${d.slice(5).replace('-', '/')}(${WDAYS[i]}) ${pad2(hr)}시대\n${names.length ? names.join(', ') : '근무자 없음'}`);
+    }
+
+    // ───────── 내 기록 (본인 근무기록 열람 + 이의신청) ─────────
+    // 텔레그램이 서명한 initData를 대시보드 API에 보내 본인 것만 받아온다.
+    // 다른 직원 기록은 이 탭에서 렌더링되지 않는다 (주간표 탭의 공개 수준과 별개).
+    const MY_API = 'https://eggdrop-automation-operation.vercel.app/api/my-records';
+    const MY = { month: null, data: null, loading: false, error: null, form: null };
+
+    function myMonthAdd(ym, d) {
+      const y = +ym.slice(0, 4), m = +ym.slice(5, 7) - 1 + d;
+      const yy = y + Math.floor(m / 12), mm = ((m % 12) + 12) % 12;
+      return yy + '-' + String(mm + 1).padStart(2, '0');
+    }
+    function myDow(ds) { return ['일','월','화','수','목','금','토'][new Date(ds + 'T00:00:00').getDay()]; }
+
+    async function myApi(action, extra) {
+      const initData = (tg && tg.initData) || '';
+      if (!initData) throw new Error('텔레그램에서 열어야 사용할 수 있습니다.');
+      const r = await fetch(MY_API, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(Object.assign({ initData, action }, extra || {})),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || ('오류 (' + r.status + ')'));
+      return j;
+    }
+
+    async function myLoad(month) {
+      MY.month = month || MY.month || myMonthAdd((STATE.date || new Date().toISOString().slice(0, 10)).slice(0, 7), -1);  // 기본 = 전월
+      MY.loading = true; MY.error = null; MY.form = null;
+      renderMyView();
+      try { MY.data = await myApi('records', { month: MY.month }); }
+      catch (e) { MY.error = e.message; MY.data = null; }
+      MY.loading = false;
+      renderMyView();
+    }
+
+    async function myRegister() {
+      const sel = document.getElementById('my-reg-name');
+      const name = sel && sel.value;
+      if (!name) { say('본인 이름을 선택해주세요.'); return; }
+      const go = async () => {
+        try { await myApi('register', { name, store: STATE.store }); myLoad(); }
+        catch (e) { say(e.message); }
+      };
+      const msg = `'${name}' 님 본인이 맞나요?\n이 텔레그램 계정과 연결되며, 이후 내 기록 탭에는 본인 기록만 표시됩니다.`;
+      if (tg && tg.showConfirm) tg.showConfirm(msg, ok => { if (ok) go(); }); else if (confirm(msg)) go();
+    }
+
+    function myOpenForm(date, store, row) {
+      MY.form = { date: date || '', store: store || STATE.store, type: row ? '시간오류' : '누락',
+                  in: row && row.in || '', out: row && row.out || '',
+                  bs: row && row.bs || '', be: row && row.be || '', fixed: !!date };
+      renderMyView();
+      setTimeout(() => { const el = document.getElementById('my-form'); if (el) el.scrollIntoView({ behavior: 'smooth' }); }, 50);
+    }
+
+    async function mySubmitForm() {
+      const v = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+      const payload = {
+        month: MY.month, date: v('my-f-date'), store: v('my-f-store') || STATE.store,
+        type: (document.querySelector('input[name="my-f-type"]:checked') || {}).value || MY.form.type,
+        claimed_in: v('my-f-in'), claimed_out: v('my-f-out'),
+        claimed_break_start: v('my-f-bs'), claimed_break_end: v('my-f-be'),
+        reason: v('my-f-reason'),
+      };
+      if (!payload.date) { say('날짜를 선택해주세요.'); return; }
+      if (payload.reason.length < 5) { say('사유를 5자 이상 적어주세요.'); return; }
+      const btn = document.getElementById('my-f-submit');
+      if (btn) { btn.disabled = true; btn.textContent = '⏳ 접수 중…'; }
+      try {
+        await myApi('dispute', payload);
+        say('이의신청이 접수되었습니다. 본사 검토 후 결과를 매장 방으로 알려드립니다.');
+        myLoad();
+      } catch (e) {
+        say(e.message);
+        if (btn) { btn.disabled = false; btn.textContent = '이의신청 제출'; }
+      }
+    }
+
+    function renderMyView() {
+      const el = document.getElementById('view-my');
+      if (!el) return;
+      const bx = 'background:var(--card,#fff);border:1px solid rgba(127,127,127,.25);border-radius:12px;padding:12px;margin-bottom:10px';
+      const btn = 'padding:7px 12px;border:1px solid rgba(127,127,127,.35);border-radius:8px;background:transparent;color:var(--text);font-size:13px;font-weight:600;cursor:pointer';
+      const inp = 'padding:6px 8px;border:1px solid rgba(127,127,127,.35);border-radius:8px;background:transparent;color:var(--text);font-size:13px';
+      let h = '';
+
+      if (MY.loading) { el.innerHTML = `<div style="${bx};text-align:center">⏳ 불러오는 중…</div>`; return; }
+      if (MY.error) {
+        el.innerHTML = `<div style="${bx}">⚠️ ${MY.error}<br><button type="button" style="${btn};margin-top:8px" onclick="myLoad()">다시 시도</button></div>`;
+        return;
+      }
+      if (!MY.data) { el.innerHTML = `<div style="${bx};text-align:center">⏳</div>`; return; }
+
+      // 최초 1회 본인 등록
+      if (MY.data.unbound) {
+        const opts = (STATE.employees || []).map(e => `<option value="${e.name}">${e.name} (${e.grade})</option>`).join('');
+        el.innerHTML = `<div style="${bx}">
+          <b>🙋 본인 확인 (최초 1회)</b>
+          <p style="font-size:12px;color:var(--hint);margin:6px 0 10px">이 텔레그램 계정을 직원 이름과 연결하면, 이후 '내 기록' 탭에 본인 근무기록만 표시됩니다.</p>
+          <select id="my-reg-name" style="${inp};width:100%"><option value="">이름 선택…</option>${opts}</select>
+          <button type="button" style="${btn};width:100%;margin-top:8px" onclick="myRegister()">등록</button>
+          <p style="font-size:11px;color:var(--hint);margin-top:8px">명단에 이름이 없으면 매장 관리자에게 확인해주세요. 잘못 등록했다면 본사에 문의해주세요.</p>
+        </div>`;
+        return;
+      }
+
+      const prevYm = myMonthAdd((STATE.date || '').slice(0, 7) || MY.month, -1);
+      const curYm = (STATE.date || '').slice(0, 7) || myMonthAdd(prevYm, 1);
+      const mbtn = ym => `<button type="button" style="${btn};${MY.month === ym ? 'border-color:var(--accent,#ff9500);color:var(--accent,#ff9500)' : ''}" onclick="myLoad('${ym}')">${+ym.slice(5, 7)}월</button>`;
+      h += `<div style="display:flex;gap:6px;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <b>🙋 ${MY.data.name} 님의 근무기록</b>
+        <span style="display:flex;gap:6px">${mbtn(prevYm)}${mbtn(curYm)}</span></div>`;
+
+      const rows = MY.data.rows || [];
+      const totalH = Math.round(rows.reduce((s, r) => s + (r.hours || 0), 0) * 10) / 10;
+      h += `<div style="${bx}">
+        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:8px">
+          <span>${+MY.month.slice(5, 7)}월 근무 <b>${rows.length}건</b></span><span>실근무 <b>${totalH}h</b></span></div>`;
+      if (!rows.length) h += `<p style="font-size:13px;color:var(--hint)">이 달 근무기록이 없습니다.</p>`;
+      else {
+        h += rows.map((r, i) => `<div style="display:flex;align-items:center;gap:6px;padding:7px 0;border-top:1px solid rgba(127,127,127,.15);font-size:13px">
+          <span style="white-space:nowrap">${r.date.slice(5).replace('-', '/')} (${myDow(r.date)})</span>
+          <span style="color:var(--hint);white-space:nowrap">${r.store}${r.support ? ' 지원' : ''}</span>
+          <span style="margin-left:auto;white-space:nowrap">${r.in || '?'}~${r.out || '?'}${r.bs && r.be ? `<span style="color:var(--hint)"> 휴${r.bs}~${r.be}</span>` : ''} · <b>${r.hours}h</b></span>
+          <button type="button" style="${btn};padding:4px 8px;font-size:12px" onclick='myOpenForm(${JSON.stringify(r.date)}, ${JSON.stringify(r.store)}, ${JSON.stringify({ in: r.in, out: r.out, bs: r.bs, be: r.be })})'>이의</button>
+        </div>`).join('');
+      }
+      h += `<button type="button" style="${btn};width:100%;margin-top:10px" onclick="myOpenForm(null, null, null)">➕ 누락된 근무 신고 (기록에 없는 날)</button></div>`;
+
+      // 이의신청 폼
+      if (MY.form) {
+        const f = MY.form;
+        const types = f.fixed ? ['시간오류', '휴게오류', '기타'] : ['누락', '지원누락', '기타'];
+        h += `<div id="my-form" style="${bx}">
+          <b>📮 이의신청 — ${f.fixed ? f.date : '누락 신고'}</b>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;font-size:13px">
+            <label>날짜<br><input type="date" id="my-f-date" value="${f.date}" ${f.fixed ? 'readonly' : ''} min="${MY.month}-01" max="${MY.month}-31" style="${inp};width:100%"></label>
+            <label>매장<br><input id="my-f-store" value="${f.store}" style="${inp};width:100%"></label>
+          </div>
+          <div style="margin-top:8px;font-size:13px">유형:
+            ${types.map((t, i) => `<label style="margin-right:10px"><input type="radio" name="my-f-type" value="${t}" ${t === f.type || (i === 0 && !types.includes(f.type)) ? 'checked' : ''}> ${t}</label>`).join('')}
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;font-size:13px">
+            <label>올바른 출근<br><input type="time" id="my-f-in" value="${f.in}" style="${inp};width:100%"></label>
+            <label>올바른 퇴근<br><input type="time" id="my-f-out" value="${f.out}" style="${inp};width:100%"></label>
+            <label>휴게 시작<br><input type="time" id="my-f-bs" value="${f.bs}" style="${inp};width:100%"></label>
+            <label>휴게 종료<br><input type="time" id="my-f-be" value="${f.be}" style="${inp};width:100%"></label>
+          </div>
+          <label style="display:block;margin-top:8px;font-size:13px">사유 (필수)<br>
+            <textarea id="my-f-reason" rows="3" placeholder="예: 7/12 마감 연장으로 22시 퇴근했는데 21시로 기록됨" style="${inp};width:100%"></textarea></label>
+          <div style="display:flex;gap:8px;margin-top:10px">
+            <button type="button" id="my-f-submit" style="${btn};flex:1;background:var(--accent,#ff9500);color:#fff;border:none" onclick="mySubmitForm()">이의신청 제출</button>
+            <button type="button" style="${btn}" onclick="MY.form=null;renderMyView()">닫기</button>
+          </div>
+        </div>`;
+      }
+
+      // 내 신청 현황
+      const ds = MY.data.disputes || [];
+      if (ds.length) {
+        const color = s => s === '반영완료' ? '#34c759' : s === '반려' ? '#ff3b30' : s === '검토중' ? '#ff9500' : 'var(--hint)';
+        h += `<div style="${bx}"><b>📋 내 신청 현황</b>` + ds.map(d => `
+          <div style="padding:7px 0;border-top:1px solid rgba(127,127,127,.15);font-size:13px">
+            <div style="display:flex;justify-content:space-between">
+              <span>${d.date.slice(5).replace('-', '/')} · ${d.type}${d.claimed_in ? ` · ${d.claimed_in}~${d.claimed_out || '?'}` : ''}</span>
+              <b style="color:${color(d.status)}">${d.status}</b></div>
+            ${d.resolved_note ? `<div style="font-size:12px;color:var(--hint)">↳ ${d.resolved_note}</div>` : ''}
+          </div>`).join('') + `</div>`;
+      }
+
+      h += `<p style="font-size:11px;color:var(--hint);margin-top:4px">매월 3일까지 관리자 수정 → 5일 안내 후 <b>5~6일</b>이 이의신청 기간입니다. 이후 접수분은 다음 달 급여에 소급 반영됩니다.</p>`;
+      el.innerHTML = h;
     }
 
     function showError(msg) {
