@@ -436,8 +436,10 @@
     .sup-name-suggest .item .gr { font-size: 11px; padding: 2px 6px; border-radius: 8px; color: white; }
 
     /* ── 탭 + 주간표/시간대 인원 뷰 ── */
-    .tabbar { display: flex; gap: 6px; margin-top: 8px; }
-    .tab { flex: 1; padding: 7px 4px; font-size: 13px; font-weight: 600;
+    /* 탭 5개 — 줄바꿈 금지, 좁은 화면은 가로 스크롤 (2026-07-30) */
+    .tabbar { display: flex; gap: 6px; margin-top: 8px; flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+    .tabbar::-webkit-scrollbar { display: none; }
+    .tab { flex: 1 0 auto; white-space: nowrap; padding: 7px 8px; font-size: 13px; font-weight: 600;
            border: 1px solid rgba(0,0,0,0.1); background: var(--section-bg); color: var(--hint); border-radius: 10px; }
     .tab.is-active { background: var(--btn); color: #fff; border-color: var(--btn); }
     .alt-view { padding: 0 12px 90px; }
@@ -554,7 +556,8 @@
       <button type="button" class="tab" data-tab="winput" onclick="switchTab('winput')">🗓 주간입력</button>
       <button type="button" class="tab" data-tab="week" onclick="switchTab('week')">📆 주간표</button>
       <button type="button" class="tab" data-tab="heat" onclick="switchTab('heat')">👥 시간대</button>
-      <button type="button" class="tab" data-tab="my" onclick="switchTab('my')">🙋 내 기록</button>
+      <!-- '내 기록'은 직접 링크 진입(전용 모드)에서만 표시 — 키보드 버튼 미니앱은 initData가 없어 본인 확인 불가 -->
+      <button type="button" class="tab" data-tab="my" onclick="switchTab('my')" style="display:none">🙋 내 기록</button>
     </div>
   </header>
 
@@ -818,6 +821,14 @@
           return false;
         }
       }
+      // 직접 링크 미니앱(t.me/봇/records) — 봇 URL 주입(gz/d) 없이 열리고,
+      // 텔레그램이 서명된 본인 신원(initData)을 전달한다. '내 기록' 전용 모드.
+      // (키보드 버튼 미니앱은 initData가 비어 본인 확인 불가 — 텔레그램 제약)
+      if (tg && tg.initData) {
+        STATE.myOnly = true;
+        STATE.date = new Date().toISOString().split('T')[0];
+        return true;
+      }
       // 개발 모드: 더미 데이터
       if (window.location.hostname === 'localhost' || window.location.hostname === '' || window.location.search.includes('dev')) {
         loadDummyData();
@@ -910,6 +921,7 @@
     // ───────── 렌더 ─────────
     function init() {
       if (!parseInitData()) return;
+      if (STATE.myOnly) { initMyOnly(); return; }
 
       // 직원 목록을 직급 서열순(SV>SM>AM>Pro>Crew, 동급 가나다)으로 — 주간 입력·주간표·시간대가
       // 이 순서를 따름 (하루 입력은 sortEmployees가 근무중 우선 + 동일 서열로 별도 정렬) 2026-07-29
@@ -2416,11 +2428,23 @@
       say(`${d.slice(5).replace('-', '/')}(${WDAYS[i]}) ${pad2(hr)}시대\n${names.length ? names.join(', ') : '근무자 없음'}`);
     }
 
+    // ───────── 내 기록 전용 모드 (직접 링크 t.me/봇/records 진입) ─────────
+    function initMyOnly() {
+      document.getElementById('hdr-store').textContent = '🙋 내 근무기록';
+      document.getElementById('hdr-sub').textContent = '본인 확인 후 본인 기록만 표시됩니다';
+      const tb = document.getElementById('tabbar');
+      tb.style.display = '';
+      tb.querySelectorAll('.tab').forEach(b => { b.style.display = b.dataset.tab === 'my' ? '' : 'none'; });
+      document.getElementById('loading').style.display = 'none';
+      try { adjustHeaderOffset(); } catch (e) {}
+      switchTab('my');
+    }
+
     // ───────── 내 기록 (본인 근무기록 열람 + 이의신청) ─────────
     // 텔레그램이 서명한 initData를 대시보드 API에 보내 본인 것만 받아온다.
     // 다른 직원 기록은 이 탭에서 렌더링되지 않는다 (주간표 탭의 공개 수준과 별개).
     const MY_API = 'https://eggdrop-automation-operation.vercel.app/api/my-records';
-    const MY = { month: null, data: null, loading: false, error: null, form: null };
+    const MY = { month: null, data: null, loading: false, error: null, form: null, roster: null };
 
     function myMonthAdd(ym, d) {
       const y = +ym.slice(0, 4), m = +ym.slice(5, 7) - 1 + d;
@@ -2445,18 +2469,38 @@
       MY.month = month || MY.month || myMonthAdd((STATE.date || new Date().toISOString().slice(0, 10)).slice(0, 7), -1);  // 기본 = 전월
       MY.loading = true; MY.error = null; MY.form = null;
       renderMyView();
-      try { MY.data = await myApi('records', { month: MY.month }); }
+      try {
+        MY.data = await myApi('records', { month: MY.month });
+        // 직접 링크 진입은 매장 로스터를 모름 → 본인 확인용 명단을 API에서 받는다
+        if (MY.data.unbound && !(STATE.employees || []).length && !MY.roster) {
+          try { MY.roster = (await myApi('roster')).stores || []; } catch (e) { MY.roster = []; }
+        }
+      }
       catch (e) { MY.error = e.message; MY.data = null; }
       MY.loading = false;
       renderMyView();
+    }
+
+    function renderMyRegNames() {
+      const stSel = document.getElementById('my-reg-store');
+      const box = document.getElementById('my-reg-names');
+      if (!stSel || !box) return;
+      const grp = (MY.roster || []).find(s => s.store === stSel.value);
+      const inp = 'padding:6px 8px;border:1px solid rgba(127,127,127,.35);border-radius:8px;background:var(--bg);color:var(--text);font-size:13px';
+      box.innerHTML = grp
+        ? `<select id="my-reg-name" style="${inp};width:100%"><option value="">이름 선택…</option>`
+          + grp.names.map(n => `<option value="${n.name}">${n.name}${n.grade ? ' (' + n.grade + ')' : ''}</option>`).join('') + `</select>`
+        : '';
     }
 
     async function myRegister() {
       const sel = document.getElementById('my-reg-name');
       const name = sel && sel.value;
       if (!name) { say('본인 이름을 선택해주세요.'); return; }
+      const stSel = document.getElementById('my-reg-store');
+      const store = (stSel && stSel.value) || STATE.store || '';
       const go = async () => {
-        try { await myApi('register', { name, store: STATE.store }); myLoad(); }
+        try { await myApi('register', { name, store }); MY.roster = null; myLoad(); }
         catch (e) { say(e.message); }
       };
       const msg = `'${name}' 님 본인이 맞나요?\n이 텔레그램 계정과 연결되며, 이후 내 기록 탭에는 본인 기록만 표시됩니다.`;
@@ -2464,7 +2508,7 @@
     }
 
     function myOpenForm(date, store, row) {
-      MY.form = { date: date || '', store: store || STATE.store, type: row ? '시간오류' : '누락',
+      MY.form = { date: date || '', store: store || STATE.store || (MY.data && MY.data.store) || '', type: row ? '시간오류' : '누락',
                   in: row && row.in || '', out: row && row.out || '',
                   bs: row && row.bs || '', be: row && row.be || '', fixed: !!date };
       renderMyView();
@@ -2497,9 +2541,11 @@
     function renderMyView() {
       const el = document.getElementById('view-my');
       if (!el) return;
-      const bx = 'background:var(--card,#fff);border:1px solid rgba(127,127,127,.25);border-radius:12px;padding:12px;margin-bottom:10px';
-      const btn = 'padding:7px 12px;border:1px solid rgba(127,127,127,.35);border-radius:8px;background:transparent;color:var(--text);font-size:13px;font-weight:600;cursor:pointer';
-      const inp = 'padding:6px 8px;border:1px solid rgba(127,127,127,.35);border-radius:8px;background:transparent;color:var(--text);font-size:13px';
+      // 색은 텔레그램 테마 변수만 사용 — 미정의 변수(--card 등)는 다크 테마에서
+      // 흰 배경+흰 글씨가 되어 내용이 안 보인다 (2026-07-30 수정)
+      const bx = 'background:var(--section-bg);color:var(--text);border:1px solid rgba(127,127,127,.25);border-radius:12px;padding:12px;margin-bottom:10px';
+      const btn = 'padding:7px 12px;border:1px solid rgba(127,127,127,.35);border-radius:8px;background:var(--secondary-bg);color:var(--text);font-size:13px;font-weight:600;cursor:pointer';
+      const inp = 'padding:6px 8px;border:1px solid rgba(127,127,127,.35);border-radius:8px;background:var(--bg);color:var(--text);font-size:13px';
       let h = '';
 
       if (MY.loading) { el.innerHTML = `<div style="${bx};text-align:center">⏳ 불러오는 중…</div>`; return; }
@@ -2511,11 +2557,21 @@
 
       // 최초 1회 본인 등록
       if (MY.data.unbound) {
-        const opts = (STATE.employees || []).map(e => `<option value="${e.name}">${e.name} (${e.grade})</option>`).join('');
+        // 매장 방 진입(STATE.employees 있음) = 그 매장 명단 · 직접 링크 = API 로스터(매장 선택 후)
+        let picker;
+        if ((STATE.employees || []).length) {
+          picker = `<select id="my-reg-name" style="${inp};width:100%"><option value="">이름 선택…</option>`
+            + STATE.employees.map(e => `<option value="${e.name}">${e.name} (${e.grade})</option>`).join('') + `</select>`;
+        } else {
+          const st = (MY.roster || []);
+          picker = `<select id="my-reg-store" style="${inp};width:100%;margin-bottom:6px" onchange="renderMyRegNames()">
+              <option value="">소속 매장 선택…</option>${st.map(s2 => `<option value="${s2.store}">${s2.store}</option>`).join('')}
+            </select><span id="my-reg-names"></span>`;
+        }
         el.innerHTML = `<div style="${bx}">
           <b>🙋 본인 확인 (최초 1회)</b>
-          <p style="font-size:12px;color:var(--hint);margin:6px 0 10px">이 텔레그램 계정을 직원 이름과 연결하면, 이후 '내 기록' 탭에 본인 근무기록만 표시됩니다.</p>
-          <select id="my-reg-name" style="${inp};width:100%"><option value="">이름 선택…</option>${opts}</select>
+          <p style="font-size:12px;color:var(--hint);margin:6px 0 10px">이 텔레그램 계정을 직원 이름과 연결하면, 이후 '내 기록'에 본인 근무기록만 표시됩니다.</p>
+          ${picker}
           <button type="button" style="${btn};width:100%;margin-top:8px" onclick="myRegister()">등록</button>
           <p style="font-size:11px;color:var(--hint);margin-top:8px">명단에 이름이 없으면 매장 관리자에게 확인해주세요. 잘못 등록했다면 본사에 문의해주세요.</p>
         </div>`;
@@ -2524,7 +2580,7 @@
 
       const prevYm = myMonthAdd((STATE.date || '').slice(0, 7) || MY.month, -1);
       const curYm = (STATE.date || '').slice(0, 7) || myMonthAdd(prevYm, 1);
-      const mbtn = ym => `<button type="button" style="${btn};${MY.month === ym ? 'border-color:var(--accent,#ff9500);color:var(--accent,#ff9500)' : ''}" onclick="myLoad('${ym}')">${+ym.slice(5, 7)}월</button>`;
+      const mbtn = ym => `<button type="button" style="${btn};${MY.month === ym ? 'border-color:var(--btn);color:var(--btn)' : ''}" onclick="myLoad('${ym}')">${+ym.slice(5, 7)}월</button>`;
       h += `<div style="display:flex;gap:6px;align-items:center;justify-content:space-between;margin-bottom:10px">
         <b>🙋 ${MY.data.name} 님의 근무기록</b>
         <span style="display:flex;gap:6px">${mbtn(prevYm)}${mbtn(curYm)}</span></div>`;
@@ -2567,7 +2623,7 @@
           <label style="display:block;margin-top:8px;font-size:13px">사유 (필수)<br>
             <textarea id="my-f-reason" rows="3" placeholder="예: 7/12 마감 연장으로 22시 퇴근했는데 21시로 기록됨" style="${inp};width:100%"></textarea></label>
           <div style="display:flex;gap:8px;margin-top:10px">
-            <button type="button" id="my-f-submit" style="${btn};flex:1;background:var(--accent,#ff9500);color:#fff;border:none" onclick="mySubmitForm()">이의신청 제출</button>
+            <button type="button" id="my-f-submit" style="${btn};flex:1;background:var(--btn);color:var(--btn-text);border:none" onclick="mySubmitForm()">이의신청 제출</button>
             <button type="button" style="${btn}" onclick="MY.form=null;renderMyView()">닫기</button>
           </div>
         </div>`;
