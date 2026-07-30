@@ -2466,7 +2466,7 @@
     }
 
     async function myLoad(month) {
-      MY.month = month || MY.month || myMonthAdd((STATE.date || new Date().toISOString().slice(0, 10)).slice(0, 7), -1);  // 기본 = 전월
+      MY.month = month || MY.month || (STATE.date || new Date().toISOString().slice(0, 10)).slice(0, 7);  // 기본 = 당월
       MY.loading = true; MY.error = null; MY.form = null;
       renderMyView();
       try {
@@ -2507,6 +2507,30 @@
       if (tg && tg.showConfirm) tg.showConfirm(msg, ok => { if (ok) go(); }); else if (confirm(msg)) go();
     }
 
+    // 출퇴근·휴게 시각 = 시 select + 분 select(10분 단위). 미니앱 하루 입력과 동일한 10분 그리드.
+    //   기존 기록이 :15 등 10분 배수가 아니면 그 값도 옵션에 남겨 그대로 유지할 수 있게 한다.
+    function myTimeSel(id, val) {
+      const inp = 'padding:6px 4px;border:1px solid rgba(127,127,127,.35);border-radius:8px;background:var(--bg);color:var(--text);font-size:13px';
+      const cur = /^\d{1,2}:\d{2}$/.test(val || '') ? String(val) : '';
+      const ch = cur ? +cur.split(':')[0] : null;
+      const cm = cur ? +cur.split(':')[1] : null;
+      const mins = [0, 10, 20, 30, 40, 50];
+      if (cm != null && !mins.includes(cm)) mins.push(cm);
+      mins.sort((a, b) => a - b);
+      const hOpts = ['<option value="">--</option>'].concat(
+        Array.from({ length: 24 }, (_, i) => `<option value="${i}" ${ch === i ? 'selected' : ''}>${pad2(i)}</option>`)).join('');
+      const mOpts = ['<option value="">--</option>'].concat(
+        mins.map(m => `<option value="${m}" ${cm === m ? 'selected' : ''}>${pad2(m)}</option>`)).join('');
+      return `<span style="display:flex;gap:4px;align-items:center">
+        <select id="${id}-h" style="${inp};flex:1">${hOpts}</select><span style="color:var(--hint)">:</span>
+        <select id="${id}-m" style="${inp};flex:1">${mOpts}</select></span>`;
+    }
+    function myTimeVal(id) {
+      const hs = document.getElementById(id + '-h'), ms = document.getElementById(id + '-m');
+      if (!hs || !ms || hs.value === '') return '';
+      return pad2(+hs.value) + ':' + pad2(+(ms.value || 0));
+    }
+
     function myOpenForm(date, store, row) {
       MY.form = { date: date || '', store: store || STATE.store || (MY.data && MY.data.store) || '', type: row ? '시간오류' : '누락',
                   in: row && row.in || '', out: row && row.out || '',
@@ -2520,8 +2544,8 @@
       const payload = {
         month: MY.month, date: v('my-f-date'), store: v('my-f-store') || STATE.store,
         type: (document.querySelector('input[name="my-f-type"]:checked') || {}).value || MY.form.type,
-        claimed_in: v('my-f-in'), claimed_out: v('my-f-out'),
-        claimed_break_start: v('my-f-bs'), claimed_break_end: v('my-f-be'),
+        claimed_in: myTimeVal('my-f-in'), claimed_out: myTimeVal('my-f-out'),
+        claimed_break_start: myTimeVal('my-f-bs'), claimed_break_end: myTimeVal('my-f-be'),
         reason: v('my-f-reason'),
       };
       if (!payload.date) { say('날짜를 선택해주세요.'); return; }
@@ -2578,12 +2602,17 @@
         return;
       }
 
-      const prevYm = myMonthAdd((STATE.date || '').slice(0, 7) || MY.month, -1);
-      const curYm = (STATE.date || '').slice(0, 7) || myMonthAdd(prevYm, 1);
-      const mbtn = ym => `<button type="button" style="${btn};${MY.month === ym ? 'border-color:var(--btn);color:var(--btn)' : ''}" onclick="myLoad('${ym}')">${+ym.slice(5, 7)}월</button>`;
+      // 월 이동 — 당월이 기본, ‹ › 로 전월·다음달 (미래 월은 이동 금지)
+      const nowYm = (STATE.date || new Date().toISOString().slice(0, 10)).slice(0, 7);
+      const nav = 'width:32px;height:30px;border:1px solid rgba(127,127,127,.35);border-radius:8px;background:var(--secondary-bg);color:var(--text);font-size:15px;font-weight:700;cursor:pointer';
+      const canNext = MY.month < nowYm;
       h += `<div style="display:flex;gap:6px;align-items:center;justify-content:space-between;margin-bottom:10px">
         <b>🙋 ${MY.data.name} 님의 근무기록</b>
-        <span style="display:flex;gap:6px">${mbtn(prevYm)}${mbtn(curYm)}</span></div>`;
+        <span style="display:flex;gap:6px;align-items:center">
+          <button type="button" style="${nav}" onclick="myLoad('${myMonthAdd(MY.month, -1)}')" title="전월">‹</button>
+          <b style="min-width:62px;text-align:center;font-size:14px">${MY.month.slice(0, 4)}.${MY.month.slice(5, 7)}</b>
+          <button type="button" style="${nav};${canNext ? '' : 'opacity:.35'}" ${canNext ? `onclick="myLoad('${myMonthAdd(MY.month, 1)}')"` : 'disabled'} title="다음달">›</button>
+        </span></div>`;
 
       const rows = MY.data.rows || [];
       const totalH = Math.round(rows.reduce((s, r) => s + (r.hours || 0), 0) * 10) / 10;
@@ -2592,11 +2621,11 @@
           <span>${+MY.month.slice(5, 7)}월 근무 <b>${rows.length}건</b></span><span>실근무 <b>${totalH}h</b></span></div>`;
       if (!rows.length) h += `<p style="font-size:13px;color:var(--hint)">이 달 근무기록이 없습니다.</p>`;
       else {
-        h += rows.map((r, i) => `<div style="display:flex;align-items:center;gap:6px;padding:7px 0;border-top:1px solid rgba(127,127,127,.15);font-size:13px">
+        h += rows.map((r, i) => `<div style="display:flex;align-items:center;gap:6px;padding:7px 0;border-top:1px solid rgba(127,127,127,.15);font-size:13px;flex-wrap:wrap">
           <span style="white-space:nowrap">${r.date.slice(5).replace('-', '/')} (${myDow(r.date)})</span>
           <span style="color:var(--hint);white-space:nowrap">${r.store}${r.support ? ' 지원' : ''}</span>
           <span style="margin-left:auto;white-space:nowrap">${r.in || '?'}~${r.out || '?'}${r.bs && r.be ? `<span style="color:var(--hint)"> 휴${r.bs}~${r.be}</span>` : ''} · <b>${r.hours}h</b></span>
-          <button type="button" style="${btn};padding:4px 8px;font-size:12px" onclick='myOpenForm(${JSON.stringify(r.date)}, ${JSON.stringify(r.store)}, ${JSON.stringify({ in: r.in, out: r.out, bs: r.bs, be: r.be })})'>이의</button>
+          <button type="button" style="${btn};padding:4px 10px;font-size:12px;white-space:nowrap;flex:0 0 auto" onclick='myOpenForm(${JSON.stringify(r.date)}, ${JSON.stringify(r.store)}, ${JSON.stringify({ in: r.in, out: r.out, bs: r.bs, be: r.be })})'>이의</button>
         </div>`).join('');
       }
       h += `<button type="button" style="${btn};width:100%;margin-top:10px" onclick="myOpenForm(null, null, null)">➕ 누락된 근무 신고 (기록에 없는 날)</button></div>`;
@@ -2615,10 +2644,10 @@
             ${types.map((t, i) => `<label style="margin-right:10px"><input type="radio" name="my-f-type" value="${t}" ${t === f.type || (i === 0 && !types.includes(f.type)) ? 'checked' : ''}> ${t}</label>`).join('')}
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;font-size:13px">
-            <label>올바른 출근<br><input type="time" id="my-f-in" value="${f.in}" style="${inp};width:100%"></label>
-            <label>올바른 퇴근<br><input type="time" id="my-f-out" value="${f.out}" style="${inp};width:100%"></label>
-            <label>휴게 시작<br><input type="time" id="my-f-bs" value="${f.bs}" style="${inp};width:100%"></label>
-            <label>휴게 종료<br><input type="time" id="my-f-be" value="${f.be}" style="${inp};width:100%"></label>
+            <label>올바른 출근<br>${myTimeSel('my-f-in', f.in)}</label>
+            <label>올바른 퇴근<br>${myTimeSel('my-f-out', f.out)}</label>
+            <label>휴게 시작<br>${myTimeSel('my-f-bs', f.bs)}</label>
+            <label>휴게 종료<br>${myTimeSel('my-f-be', f.be)}</label>
           </div>
           <label style="display:block;margin-top:8px;font-size:13px">사유 (필수)<br>
             <textarea id="my-f-reason" rows="3" placeholder="예: 7/12 마감 연장으로 22시 퇴근했는데 21시로 기록됨" style="${inp};width:100%"></textarea></label>
@@ -2642,7 +2671,7 @@
           </div>`).join('') + `</div>`;
       }
 
-      h += `<p style="font-size:11px;color:var(--hint);margin-top:4px">매월 3일까지 관리자 수정 → 5일 안내 후 <b>5~6일</b>이 이의신청 기간입니다. 이후 접수분은 다음 달 급여에 소급 반영됩니다.</p>`;
+      h += `<p style="font-size:11px;color:var(--hint);margin-top:4px">‹ › 로 월을 이동해 지난달 기록도 확인할 수 있어요. 매월 3일까지 관리자 수정 → 5일 안내 후 <b>5~6일</b>이 전월 이의신청 기간입니다(이후 접수분은 다음 달 급여에 소급).</p>`;
       el.innerHTML = h;
     }
 
