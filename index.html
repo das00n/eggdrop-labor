@@ -85,6 +85,14 @@
     .emp-row.deleting { opacity: 0.4; text-decoration: line-through; background: rgba(0,0,0,0.04); }
     .work-hours.warn { color: var(--destructive); font-weight: 700; }
 
+    /* 타매장 근무기록 안내 — 같은 날 다른 매장에도 기록이 있을 때 (중복 입력 예방) */
+    .emp-row.dup { background: rgba(255,59,48,0.06); border-left: 3px solid var(--destructive); }
+    .dup-note {
+      padding: 6px 10px; border-radius: 8px; font-size: 12px; line-height: 1.45;
+      background: var(--secondary-bg); color: var(--hint);
+    }
+    .dup-note.block { background: rgba(255,59,48,0.12); color: var(--destructive); font-weight: 600; }
+
     /* 행 단위 삭제 버튼 */
     .row-delete {
       width: 28px; height: 28px; border-radius: 14px;
@@ -779,6 +787,9 @@
       support_daily_hours: { SV: 10.4, SM: 10, AM: 9, Pro: 8, Crew: 8 },
       all_stores: {},            // {매장명: [{n, g, i}]} — 지원 자동완성용
       supportEntries: [],        // [{direction: 'in'|'out', other_store, name, grade, hours, mode}]
+      // {날짜: {empId: [{s: 매장, i: 출근, o: 퇴근, h: 시간}]}} — 우리 직원의 타매장 근무기록.
+      // 같은 사람이 같은 날 두 매장에 유급 기록으로 남으면 급여가 두 번 계산된다(2026-08 사고).
+      other_store_work_by_date: {},
     };
 
     // 출/퇴근 picker 임시 상태
@@ -1455,14 +1466,70 @@
       return sec;
     }
 
+    // ───────── 타매장 중복 근무 검사 ─────────
+    // 판정 규칙은 봇의 find_cross_store_duplicates와 같아야 한다 — 화면에서 통과한 입력이
+    // 저장 단계에서 거절되면(또는 그 반대) 매니저가 이유를 알 수 없다.
+    //   시간이 겹침 = 한 사람이 두 곳에 동시에 있을 수 없음 → 저장 차단
+    //   안 겹침     = 오전 A매장·오후 B매장 같은 실제 분할근무일 수 있음 → 안내만
+    function hhmmToMin(v) {
+      const m = /^(\d{1,2}):(\d{2})/.exec(String(v || ''));
+      return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+    }
+    function shiftOverlapMin(aIn, aOut, bIn, bOut) {
+      let a1 = hhmmToMin(aIn), a2 = hhmmToMin(aOut);
+      let b1 = hhmmToMin(bIn), b2 = hhmmToMin(bOut);
+      if (a1 === null || a2 === null || b1 === null || b2 === null) return -1;
+      if (a2 <= a1) a2 += 1440;
+      if (b2 <= b1) b2 += 1440;
+      let best = 0;
+      for (const s of [-1440, 0, 1440]) {
+        best = Math.max(best, Math.min(a2, b2 + s) - Math.max(a1, b1 + s));
+      }
+      return Math.max(0, best);
+    }
+    /** 날짜·직원·그날 입력값 → 겹치는 타매장 기록 [{s, i, o, h, blocking}]. 없으면 []. */
+    function dupHitsFor(dateStr, empId, ent) {
+      const rows = ((STATE.other_store_work_by_date || {})[dateStr] || {})[empId] || [];
+      if (!rows.length) return [];
+      // 우리 매장에서 근무로 넣지 않으면(휴무) 중복이 아니다 — 안내도 띄우지 않는다
+      const working = !!(ent && ent.on && ent.in && ent.out)
+        && !STATE.deletedEmployees.includes(empId);
+      if (!working) return [];
+      return rows.map(r => ({
+        ...r, blocking: shiftOverlapMin(ent.in, ent.out, r.i, r.o) !== 0,
+      }));
+    }
+    /** 하루 입력 화면(선택 날짜)의 검사 — dupHitsFor의 STATE 바인딩판. */
+    function otherStoreWork(empId) {
+      return dupHitsFor(STATE.date, empId, STATE.entries[empId]);
+    }
+    function dupNoteHtml(empId) {
+      const hits = otherStoreWork(empId);
+      if (!hits.length) return '';
+      const blocking = hits.some(h => h.blocking);
+      const lines = hits.map(h =>
+        `${h.s} ${h.i || '?'}~${h.o || '?'} (${h.h}h)`).join(' · ');
+      return `<div class="dup-note${blocking ? ' block' : ''}">${blocking ? '⛔' : '⚠️'} `
+        + `<b>${h_esc(hits[0].s)}</b>의 근무기록과 중복됩니다 — ${h_esc(lines)}<br>`
+        + (blocking
+          ? '같은 시간에 두 매장에서 근무할 수 없습니다. 지원을 간 것이라면 <b>휴무</b>로 두세요 (이대로는 저장되지 않습니다).'
+          : '시간이 겹치지는 않습니다. 분할근무가 맞다면 그대로 저장하세요.')
+        + '</div>';
+    }
+    function h_esc(s) {
+      return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    }
+
     function renderEmpRow(emp) {
       const ent = STATE.entries[emp.id];
       const isDeleting = STATE.deletedEmployees.includes(emp.id);
       const row = document.createElement('div');
       const incomplete = !isDeleting && ent.on && (!ent.in || !ent.out);
+      const dupNote = isDeleting ? '' : dupNoteHtml(emp.id);
       row.className = 'emp-row'
         + (ent.on ? '' : ' off')
         + (incomplete ? ' incomplete' : '')
+        + (dupNote ? ' dup' : '')
         + (isDeleting ? ' deleting' : '');
       row.id = `emp-row-${emp.id}`;
 
@@ -1513,6 +1580,7 @@
             <div class="work-hours ${incomplete ? 'warn' : ''}">${workStr}</div>
           </div>
           <div class="half-row">${emp.grade !== 'Crew' ? `<div class="half-chip${ent.half ? ' active' : ''}" onclick="toggleHalf('${emp.id}')">${ent.half ? '✓ 반차 (0.5일)' : '☐ 반차 (절반 근무)'}</div>` : ''}<div class="half-chip hol-chip${ent.hol ? ' active' : ''}" onclick="toggleHol('${emp.id}')" style="margin-left:6px">${ent.hol ? '✓ 🎌 공휴일 근무' : '☐ 🎌 공휴일 근무'}</div></div>
+          ${dupNote}
         ` : `
           <div class="emp-time-row">
             <div class="off-label">휴무 · 토글 ON으로 변경</div>
@@ -2016,6 +2084,20 @@
               incomplete.map(e => `• ${e.name} (${e.grade})`).join('\n'));
         return;
       }
+      // 타매장과 근무시간이 겹치는 직원 차단 — 봇도 저장 시 같은 검사를 하지만,
+      // 여기서 먼저 막아야 매니저가 전송 후에 거절당하는 왕복을 겪지 않는다.
+      const dupBlocked = STATE.employees
+        .map(emp => ({ emp, hits: otherStoreWork(emp.id).filter(h => h.blocking) }))
+        .filter(x => x.hits.length > 0);
+      if (dupBlocked.length > 0) {
+        say(`⛔ 같은 날 다른 매장에 근무시간이 겹치는 기록이 있어 저장할 수 없습니다:\n\n`
+          + dupBlocked.map(({ emp, hits }) =>
+              `• ${emp.name} — ${hits.map(h => `${h.s} ${h.i || '?'}~${h.o || '?'}`).join(', ')}`).join('\n')
+          + `\n\n한 사람이 같은 시간에 두 매장에서 근무할 수는 없습니다. 그대로 저장하면 하루가 두 번 계산됩니다.\n\n`
+          + `• 그 매장으로 지원을 간 것이라면 → 여기서는 휴무로 두세요\n`
+          + `• 우리 매장 근무가 맞다면 → 상대 매장에 기록 삭제를 요청한 뒤 저장하세요`);
+        return;
+      }
       const payload = {
         store: STATE.store,
         date: STATE.date,
@@ -2264,6 +2346,18 @@
       dirty = dirty.filter(inRange);
       if (blocked.length && !dirty.length) { say('입력 가능 기간(당월~다음달)이 지난 날짜입니다.\n지난 스케줄은 조회만 가능해요.'); return; }
       if (blocked.length) say(`입력 기간이 지난 ${blocked.length}일(${blocked.map(d=>d.slice(5).replace('-','/')).join(', ')})은 제외하고 저장합니다.`);
+      // 타매장과 근무시간이 겹치는 날은 봇이 그 날짜만 거절한다 — 전송 전에 알려 되돌린다
+      const wkDup = [];
+      dirty.forEach(d => STATE.employees.forEach(emp => {
+        dupHitsFor(d, emp.id, wkEntry(d, emp.id))
+          .filter(h => h.blocking)
+          .forEach(h => wkDup.push(`• ${d.slice(5).replace('-', '/')} ${emp.name} — ${h.s} ${h.i || '?'}~${h.o || '?'}`));
+      }));
+      if (wkDup.length) {
+        say(`⛔ 다른 매장과 근무시간이 겹치는 날이 있어 저장할 수 없습니다:\n\n${wkDup.join('\n')}\n\n`
+          + `한 사람이 같은 시간에 두 매장에서 근무할 수는 없습니다. 지원을 간 날이면 휴무로 두세요.`);
+        return;
+      }
       const days = dirty.map(d => {
         const entries = STATE.employees.map(emp => {
           const e = wkEntry(d, emp.id);
@@ -2633,7 +2727,9 @@
       // 이의신청 폼
       if (MY.form) {
         const f = MY.form;
-        const types = f.fixed ? ['시간오류', '휴게오류', '기타'] : ['누락', '지원누락', '기타'];
+        // 기존 기록에 대한 이의는 '중복'(같은 날 다른 매장에도 기록이 있음)도 고를 수 있다.
+        // '기타'로 접수되면 본사가 유형을 다시 정해야 반영돼 처리가 늦어진다.
+        const types = f.fixed ? ['시간오류', '휴게오류', '중복', '기타'] : ['누락', '지원누락', '기타'];
         h += `<div id="my-form" style="${bx}">
           <b>📮 이의신청 — ${f.fixed ? f.date : '누락 신고'}</b>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;font-size:13px">
@@ -2643,6 +2739,7 @@
           <div style="margin-top:8px;font-size:13px">유형:
             ${types.map((t, i) => `<label style="margin-right:10px"><input type="radio" name="my-f-type" value="${t}" ${t === f.type || (i === 0 && !types.includes(f.type)) ? 'checked' : ''}> ${t}</label>`).join('')}
           </div>
+          ${types.includes('중복') ? `<p style="font-size:11px;color:var(--hint);margin:4px 0 0">중복 = 같은 날 다른 매장에도 근무기록이 있어 이 기록이 잘못 생긴 경우 (시각 입력 불필요).</p>` : ''}
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;font-size:13px">
             <label>올바른 출근<br>${myTimeSel('my-f-in', f.in)}</label>
             <label>올바른 퇴근<br>${myTimeSel('my-f-out', f.out)}</label>
