@@ -794,6 +794,41 @@
     </div>
   </div>
 
+  <!-- ───────── 직원 삭제 Modal (퇴사 · 타매장 발령) ─────────
+       예/아니오 confirm 만 있던 시절엔 "언제까지 일했는지"가 어디에도 안 남았다.
+       지운 날 = 마지막 근무일이 아니다 — 보통 며칠 지나서 주간 계획표를 짜다가 지운다. -->
+  <div class="modal-backdrop" id="del-modal">
+    <div class="modal">
+      <h2 class="modal-title" id="del-title">🗑 직원 삭제</h2>
+      <p class="modal-sub">
+        이 직원이 여전히 본 매장에서 근무 중이라면 삭제하지 마세요.
+        삭제는 <b>퇴사</b> 또는 <b>타매장 발령</b>으로 더 이상 본 매장에서 일하지 않을 때만 씁니다.
+      </p>
+
+      <div class="modal-section-title">사유</div>
+      <div class="rate-row" id="del-reasons">
+        <div class="rate-chip" data-reason="퇴사" onclick="delSetReason('퇴사')">퇴사</div>
+        <div class="rate-chip" data-reason="발령" onclick="delSetReason('발령')">타매장 발령</div>
+      </div>
+
+      <div class="modal-section-title" id="del-day-label">마지막 근무일</div>
+      <input class="form-input" id="del-last-day" type="date">
+
+      <div id="del-store-area" style="display:none">
+        <div class="modal-section-title">발령 매장</div>
+        <select class="form-input" id="del-to-store"><option value="">매장 선택</option></select>
+        <p class="modal-sub" style="margin-top:6px">
+          발령 매장에서 이 분을 등록할 때 <b>같은 전화번호</b>를 넣으면 근무기록이 이어집니다.
+        </p>
+      </div>
+
+      <div class="modal-actions">
+        <button class="modal-btn secondary" onclick="closeDeleteModal()">취소</button>
+        <button class="modal-btn primary" onclick="confirmEmpDelete()">삭제</button>
+      </div>
+    </div>
+  </div>
+
   <!-- 직급 변경 Modal (운영자 전용) -->
   <div class="modal-backdrop" id="gc-modal">
     <div class="modal">
@@ -832,6 +867,7 @@
       newEmployees: [],          // [{tempId, name, grade, base_rate (Crew만)}]
       employeeInfo: [],          // [{id(source_id), phone, birthday}] 기존 직원 정보 보완
       deletedEmployees: [],      // [empId] — 삭제 처리 대기 (저장 시 봇에 전달)
+      deletedInfo: {},           // {empId: {reason:'퇴사'|'발령', last_day, to_store}} — 왜·언제 떠났나
       crewRateChanges: {},       // {empId: new_base_rate} — Crew 개인 시급 변경분
       rates: { SV: 20000, SM: 15000, AM: 12000, Pro: 11000, Crew: 10000 },  // 직급별 기본 시급
       support_daily_hours: { SV: 10.4, SM: 10, AM: 9, Pro: 8, Crew: 8 },
@@ -1086,6 +1122,7 @@
       });
       if (Array.isArray(b.support_entries)) STATE.supportEntries = b.support_entries.slice();
       if (Array.isArray(b.deleted_employees)) STATE.deletedEmployees = b.deleted_employees.slice();
+      if (b.deleted_employee_info) STATE.deletedInfo = { ...b.deleted_employee_info };
       renderMain();
       updateSummary();
       say('직전에 입력하던 내용을 불러왔습니다.\n⚠️ 화면의 최신 데이터 대신 이 내용으로 저장됩니다. 확인 후 저장하세요.');
@@ -1618,7 +1655,7 @@
         </div>
         ${isDeleting ? `
           <div class="emp-time-row">
-            <div class="off-label">🗑 삭제 대기 — 저장 시 시트에 반영</div>
+            <div class="off-label">${delLabel(emp.id)}</div>
           </div>
         ` : (ent.on ? `
           <div class="emp-time-row">
@@ -1645,21 +1682,69 @@
       return row;
     }
 
-    // ───────── 행 단위 삭제 ─────────
+    // ───────── 행 단위 삭제 (퇴사 · 타매장 발령) ─────────
+    // 사유와 마지막 근무일을 여기서 받는다. 나중에 정산표에서 "이 사람 왜 이번 달만
+    // 반쪽이지"를 확인할 때, 이 값이 없으면 매번 매장에 물어봐야 한다.
+    let DEL_CTX = null;   // {empId, name, reason, last_day, to_store}
+
     function markEmpDelete(empId, empName) {
-      const msg =
-        `⚠️ ${empName} 직원 삭제\n\n` +
-        `이 직원이 여전히 본 매장에서 근무 중이라면 삭제하지 마세요.\n` +
-        `삭제는 타매장 이동 또는 퇴직 등으로 더 이상 본 매장에서 일하지 않을 때만 사용합니다.\n\n` +
-        `정말 삭제하시겠습니까?`;
-      if (!confirm(msg)) return;
+      DEL_CTX = { empId, name: empName, reason: null };
+      document.getElementById('del-title').textContent = `🗑 ${empName} 직원 삭제`;
+      document.querySelectorAll('#del-reasons .rate-chip').forEach(c => c.classList.remove('selected'));
+      document.getElementById('del-last-day').value = _todayStr();
+      document.getElementById('del-store-area').style.display = 'none';
+      document.getElementById('del-day-label').textContent = '마지막 근무일';
+      // 발령 매장 목록 — 지원 근무와 같은 소스(자기 매장 제외)
+      const sel = document.getElementById('del-to-store');
+      sel.innerHTML = '<option value="">매장 선택</option>';
+      Object.keys(STATE.all_stores || {}).forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s; opt.textContent = s;
+        sel.appendChild(opt);
+      });
+      document.getElementById('del-modal').classList.add('show');
+    }
+    function delSetReason(reason) {
+      if (!DEL_CTX) return;
+      DEL_CTX.reason = reason;
+      document.querySelectorAll('#del-reasons .rate-chip').forEach(c =>
+        c.classList.toggle('selected', c.dataset.reason === reason));
+      const transfer = reason === '발령';
+      document.getElementById('del-store-area').style.display = transfer ? '' : 'none';
+      document.getElementById('del-day-label').textContent =
+        transfer ? '본 매장에서의 마지막 근무일' : '마지막 근무일 (퇴사일)';
+    }
+    function closeDeleteModal() {
+      document.getElementById('del-modal').classList.remove('show');
+      DEL_CTX = null;
+    }
+    function confirmEmpDelete() {
+      if (!DEL_CTX) return;
+      if (!DEL_CTX.reason) { say('사유를 선택해주세요 (퇴사 / 타매장 발령)'); return; }
+      const lastDay = document.getElementById('del-last-day').value;
+      if (!lastDay) { say('마지막 근무일을 입력해주세요'); return; }
+      const toStore = DEL_CTX.reason === '발령'
+        ? document.getElementById('del-to-store').value : '';
+      if (DEL_CTX.reason === '발령' && !toStore) { say('발령 매장을 선택해주세요'); return; }
+
+      const empId = DEL_CTX.empId;
       if (!STATE.deletedEmployees.includes(empId)) STATE.deletedEmployees.push(empId);
+      STATE.deletedInfo[empId] = { reason: DEL_CTX.reason, last_day: lastDay, to_store: toStore || null };
       if (STATE.entries[empId]) STATE.entries[empId].on = false;
+      closeDeleteModal();
       refreshRow(empId);
     }
     function undoEmpDelete(empId) {
       STATE.deletedEmployees = STATE.deletedEmployees.filter(id => id !== empId);
+      delete STATE.deletedInfo[empId];
       refreshRow(empId);
+    }
+    /** 삭제 대기 행에 보이는 한 줄 — 무엇으로 기록될지 저장 전에 눈으로 확인한다. */
+    function delLabel(empId) {
+      const d = (STATE.deletedInfo || {})[empId];
+      if (!d) return '🗑 삭제 대기 — 저장 시 반영';
+      const to = d.reason === '발령' && d.to_store ? ` → ${d.to_store}` : '';
+      return `🗑 ${d.reason}${to} · 마지막 근무 ${d.last_day} — 저장 시 반영`;
     }
     function removeNewEmployee(empId) {
       // 신규 추가 대기 직원을 미니앱 내에서 제거 (시트 반영 X)
@@ -2213,6 +2298,8 @@
         // prev_versions에 없는 날짜(=당시 데이터 없음)는 'EMPTY' 센티널(봇과 합의).
         base_version: (STATE.prev_versions || {})[STATE.date] ?? 'EMPTY',
         deleted_employees: STATE.deletedEmployees.slice(), // 삭제 처리 대상 직원ID list
+        // 퇴사/발령 사유 — 봇이 employees.left_at·leave_reason·transferred_to 에 적는다
+        deleted_employee_info: { ...STATE.deletedInfo },
         entries: [],
         support_entries: STATE.supportEntries.slice(),     // [{direction, other_store, name, grade, hours, mode}]
         // Crew 시급은 개인별 — 신규는 base_rate, 기존 변경은 entries.base_rate로 전달
