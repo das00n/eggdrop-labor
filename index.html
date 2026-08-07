@@ -781,6 +781,12 @@
       <div class="modal-section-title">생년월일</div>
       <input class="form-input" id="info-birthday" type="date">
 
+      <div class="modal-section-title">입사일</div>
+      <input class="form-input" id="info-hired" type="date">
+      <p class="modal-sub" style="margin-top:6px">
+        기억나는 날짜로 넣어주세요. 동명이인 구분(먼저 입사한 분이 A) 기준이 됩니다.
+      </p>
+
       <div class="modal-actions">
         <button class="modal-btn secondary" onclick="closeInfoModal()">취소</button>
         <button class="modal-btn primary" onclick="confirmInfo()">저장</button>
@@ -2001,6 +2007,7 @@
       document.getElementById('info-title').textContent = `📇 ${emp.label || emp.name} 정보`;
       document.getElementById('info-phone').value = emp.phone || '';
       document.getElementById('info-birthday').value = emp.birthday || '';
+      document.getElementById('info-hired').value = emp.hired_at || '';
       document.getElementById('info-modal').classList.add('show');
     }
     function closeInfoModal() {
@@ -2012,11 +2019,12 @@
       const phone = phoneDigits(document.getElementById('info-phone').value);
       if (phone.length < 10) { say('전화번호를 정확히 입력해주세요 (010-0000-0000)'); return; }
       const birthday = document.getElementById('info-birthday').value || null;
+      const hired_at = document.getElementById('info-hired').value || null;
       STATE.employeeInfo = (STATE.employeeInfo || []).filter(x => x.id !== INFO_CTX.empId);
-      STATE.employeeInfo.push({ id: INFO_CTX.empId, phone, birthday });
+      STATE.employeeInfo.push({ id: INFO_CTX.empId, phone, birthday, hired_at });
       // 화면에도 즉시 반영 — 저장 전에 '아직 안 넣었나' 헷갈리지 않게
       const emp = STATE.employees.find(e => e.id === INFO_CTX.empId);
-      if (emp) { emp.phone = phone; emp.birthday = birthday; emp.has_info = true; }
+      if (emp) { emp.phone = phone; emp.birthday = birthday; emp.hired_at = hired_at; emp.has_info = true; }
       closeInfoModal();
       renderMain();
       say('저장 시 함께 등록됩니다');
