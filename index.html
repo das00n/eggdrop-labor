@@ -119,6 +119,10 @@
       display: flex; align-items: center; justify-content: space-between; gap: 8px;
     }
     .emp-name { font-weight: 600; font-size: 15px; }
+    /* 전화번호가 없는 직원 — 눌러서 채운다. 번호가 사람을 식별하는 기준이라 비어 있으면
+       같은 이름이 여러 명일 때 누구인지 가릴 수 없다. */
+    .info-need { margin-left: 6px; font-size: 11px; font-weight: 600; cursor: pointer;
+                 padding: 2px 6px; border-radius: 8px; background: #fff4e5; color: #b45309; }
     .emp-grade {
       display: inline-block; padding: 2px 8px; border-radius: 10px;
       font-size: 11px; font-weight: 600; color: white; margin-left: 6px;
@@ -724,6 +728,22 @@
       <div class="modal-section-title">이름</div>
       <input class="form-input" id="add-name" type="text" placeholder="이름을 입력해주세요" autocomplete="off">
 
+      <!-- 전화번호 = 사람을 식별하는 기준. 이름은 겹친다(2026-08 김세은 2명) —
+           번호가 있어야 같은 분이 다른 매장에 가도 한 사람으로 이어진다. -->
+      <div class="modal-section-title">전화번호</div>
+      <input class="form-input" id="add-phone" type="tel" inputmode="numeric"
+             placeholder="010-1234-5678" autocomplete="off"
+             oninput="addFormatPhone(this)">
+      <p class="modal-sub" style="margin-top:6px">
+        같은 이름이 여러 명일 수 있어 번호로 구분합니다. 다른 매장에서 근무한 적이 있으면 자동으로 이어집니다.
+      </p>
+
+      <div class="modal-section-title">생년월일</div>
+      <input class="form-input" id="add-birthday" type="date">
+
+      <div class="modal-section-title">입사일</div>
+      <input class="form-input" id="add-hired" type="date">
+
       <div class="modal-section-title">직급</div>
       <div class="grade-picker" id="add-grades"></div>
       <p class="modal-sub" id="add-grade-info" style="margin-top:8px"></p>
@@ -741,6 +761,29 @@
       <div class="modal-actions">
         <button class="modal-btn secondary" onclick="closeAddModal()">취소</button>
         <button class="modal-btn primary" onclick="confirmAddEmployee()">추가</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ───────── 직원 정보 Modal (기존 직원 전화번호·생년월일 채우기) ───────── -->
+  <div class="modal-backdrop" id="info-modal">
+    <div class="modal">
+      <h2 class="modal-title" id="info-title">📇 직원 정보</h2>
+      <p class="modal-sub">
+        전화번호로 사람을 구분합니다. 같은 이름이 여러 명이거나 여러 매장에서 근무할 때,
+        번호가 있어야 근무기록이 올바른 분에게 붙습니다.
+      </p>
+
+      <div class="modal-section-title">전화번호</div>
+      <input class="form-input" id="info-phone" type="tel" inputmode="numeric"
+             placeholder="010-1234-5678" autocomplete="off" oninput="addFormatPhone(this)">
+
+      <div class="modal-section-title">생년월일</div>
+      <input class="form-input" id="info-birthday" type="date">
+
+      <div class="modal-actions">
+        <button class="modal-btn secondary" onclick="closeInfoModal()">취소</button>
+        <button class="modal-btn primary" onclick="confirmInfo()">저장</button>
       </div>
     </div>
   </div>
@@ -781,6 +824,7 @@
       employees: [],             // [{id, name, grade, rate, base_rate, prev}]
       entries: {},               // employee_id → {in, out, break, on}
       newEmployees: [],          // [{tempId, name, grade, base_rate (Crew만)}]
+      employeeInfo: [],          // [{id(source_id), phone, birthday}] 기존 직원 정보 보완
       deletedEmployees: [],      // [empId] — 삭제 처리 대기 (저장 시 봇에 전달)
       crewRateChanges: {},       // {empId: new_base_rate} — Crew 개인 시급 변경분
       rates: { SV: 20000, SM: 15000, AM: 12000, Pro: 11000, Crew: 10000 },  // 직급별 기본 시급
@@ -1552,7 +1596,10 @@
       row.innerHTML = `
         <div class="emp-name-row">
           <div>
-            <span class="emp-name">${emp.name}</span>
+            <span class="emp-name">${emp.label || emp.name}</span>
+            ${(!emp.isNew && !emp.has_info)
+              ? `<span class="info-need" onclick="openInfoModal('${emp.id}')" title="전화번호·생년월일 등록">📇 정보</span>`
+              : ''}
             ${(STATE.is_operator && !emp.isNew && emp.grade !== 'Crew')
               ? `<span class="emp-grade ${emp.grade}" style="cursor:pointer" onclick="openGradeModal('${emp.id}')" title="직급 변경">${emp.grade} ✎</span>`
               : `<span class="emp-grade ${emp.grade}">${emp.grade}</span>`}
@@ -1944,6 +1991,37 @@
     const GRADES = ['SV','SM','AM','Pro','Crew'];
     const FT_GRADES = ['SV','SM','AM','Pro'];
 
+    // ───────── 직원 정보 (기존 직원 전화번호·생년월일) ─────────
+    // 스케줄과 함께 저장된다 — 별도 화면을 만들면 아무도 안 들어간다.
+    let INFO_CTX = null;
+    function openInfoModal(empId) {
+      const emp = STATE.employees.find(e => e.id === empId);
+      if (!emp) return;
+      INFO_CTX = { empId, name: emp.name };
+      document.getElementById('info-title').textContent = `📇 ${emp.label || emp.name} 정보`;
+      document.getElementById('info-phone').value = emp.phone || '';
+      document.getElementById('info-birthday').value = emp.birthday || '';
+      document.getElementById('info-modal').classList.add('show');
+    }
+    function closeInfoModal() {
+      document.getElementById('info-modal').classList.remove('show');
+      INFO_CTX = null;
+    }
+    function confirmInfo() {
+      if (!INFO_CTX) return;
+      const phone = phoneDigits(document.getElementById('info-phone').value);
+      if (phone.length < 10) { say('전화번호를 정확히 입력해주세요 (010-0000-0000)'); return; }
+      const birthday = document.getElementById('info-birthday').value || null;
+      STATE.employeeInfo = (STATE.employeeInfo || []).filter(x => x.id !== INFO_CTX.empId);
+      STATE.employeeInfo.push({ id: INFO_CTX.empId, phone, birthday });
+      // 화면에도 즉시 반영 — 저장 전에 '아직 안 넣었나' 헷갈리지 않게
+      const emp = STATE.employees.find(e => e.id === INFO_CTX.empId);
+      if (emp) { emp.phone = phone; emp.birthday = birthday; emp.has_info = true; }
+      closeInfoModal();
+      renderMain();
+      say('저장 시 함께 등록됩니다');
+    }
+
     // ───────── 직급 변경 (운영자 전용) ─────────
     let GC_CTX = null;
     function _todayStr() {
@@ -2003,6 +2081,10 @@
     function openAddModal() {
       AM_CTX = { name: '', grade: null, crew_rate: 13000 };
       document.getElementById('add-name').value = '';
+      document.getElementById('add-phone').value = '';
+      document.getElementById('add-birthday').value = '';
+      // 입사일 기본 = 오늘(로컬). 지난 날짜로 입사한 경우만 고치면 된다.
+      document.getElementById('add-hired').value = _todayStr();
       document.getElementById('add-grade-info').textContent = '';
       document.getElementById('add-crew-rate-area').style.display = 'none';
       document.getElementById('add-crew-rate').value = '';
@@ -2030,6 +2112,15 @@
       document.getElementById('add-modal').classList.add('show');
     }
 
+    /** 전화번호 숫자만 남겨 하이픈을 넣는다 — 표기가 제각각이면 같은 사람을 못 알아본다. */
+    function addFormatPhone(el) {
+      const d = String(el.value || '').replace(/\D/g, '').slice(0, 11);
+      el.value = d.length > 7 ? `${d.slice(0,3)}-${d.slice(3,7)}-${d.slice(7)}`
+               : d.length > 3 ? `${d.slice(0,3)}-${d.slice(3)}`
+               : d;
+    }
+    const phoneDigits = (v) => String(v || '').replace(/\D/g, '');
+
     function addSetCrewRate(v) {
       AM_CTX.crew_rate = v;
       document.getElementById('add-crew-rate').value = '';
@@ -2054,6 +2145,13 @@
     function confirmAddEmployee() {
       const name = document.getElementById('add-name').value.trim();
       if (!name) { say('이름을 입력해주세요'); return; }
+      // 전화번호는 사람을 식별하는 기준이라 필수다 — 없으면 동명이인을 가를 방법이 없다.
+      const phone = phoneDigits(document.getElementById('add-phone').value);
+      if (phone.length < 10) { say('전화번호를 정확히 입력해주세요 (010-0000-0000)'); return; }
+      const birthday = document.getElementById('add-birthday').value;
+      if (!birthday) { say('생년월일을 입력해주세요'); return; }
+      const hired_at = document.getElementById('add-hired').value;
+      if (!hired_at) { say('입사일을 입력해주세요'); return; }
       if (!AM_CTX.grade) { say('직급을 선택해주세요'); return; }
       if (AM_CTX.grade === 'Crew' && (!AM_CTX.crew_rate || AM_CTX.crew_rate <= 0)) {
         say('Crew 시급을 입력해주세요'); return;
@@ -2063,6 +2161,7 @@
       const tempId = `NEW_${Date.now()}`;
       const newEmp = {
         id: tempId, name, grade: AM_CTX.grade, prev: null, isNew: true,
+        phone, birthday, hired_at,
         base_rate: AM_CTX.grade === 'Crew' ? AM_CTX.crew_rate : null,
       };
       STATE.newEmployees.push(newEmp);
@@ -2109,8 +2208,12 @@
         entries: [],
         support_entries: STATE.supportEntries.slice(),     // [{direction, other_store, name, grade, hours, mode}]
         // Crew 시급은 개인별 — 신규는 base_rate, 기존 변경은 entries.base_rate로 전달
+        // 기존 직원 정보 보완(전화번호·생년월일) — 사람 식별 자연키
+        employee_info: (STATE.employeeInfo || []).slice(),
         new_employees: STATE.newEmployees.map(e => ({
           name: e.name, grade: e.grade,
+          // 전화번호 = 사람 식별 자연키(같은 번호면 같은 사람). 생년월일·입사일은 인사 기록.
+          phone: e.phone || null, birthday: e.birthday || null, hired_at: e.hired_at || null,
           hourly_rate: e.grade === 'Crew' ? e.base_rate : null,
         })),
       };
