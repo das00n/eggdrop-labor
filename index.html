@@ -1506,7 +1506,14 @@
       const { minIdx, maxIdx } = _monthBounds();
       const t = new Date();
       const cur = t.getFullYear() * 12 + t.getMonth();
-      return { minIdx: Math.min(minIdx, cur - VIEW_MONTHS_BACK), maxIdx };
+      let vmin = cur - VIEW_MONTHS_BACK;
+      // 봇이 URL 한도 때문에 데이터를 줄여 보냈으면 그 범위까지만 연다(payload.prev_from).
+      // 빈 달을 열어두면 "지난 스케줄이 사라졌다"로 읽힌다.
+      if (STATE.prev_from) {
+        const [py, pm] = String(STATE.prev_from).split('-').map(Number);
+        if (py && pm) vmin = Math.max(vmin, py * 12 + (pm - 1));
+      }
+      return { minIdx: Math.min(minIdx, vmin), maxIdx };
     }
     // 그 날짜가 저장 가능한가 (기본값 = 지금 보고 있는 날짜)
     function canEditDate(dateStr) {
