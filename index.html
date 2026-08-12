@@ -2018,9 +2018,30 @@
       document.getElementById('hol-modal').classList.remove('show');
       HOL_CB = null;
     }
+    // 사유가 근거로 쓸 만한가 — 봇 is_adequate_holiday_reason 과 같은 규칙.
+    //   급여 지급 근거로 남는 값이라(holiday_work.note) 자리만 채운 값은 사유가 없는 것과 같다.
+    //   여기서 막지 않으면 저장은 되고 매장방에 경고가 올라간다 — 왕복하지 않게 화면에서 막는다.
+    const HOL_REASON_MIN_LEN = 3;
+    const HOL_REASON_PLACEHOLDERS = ['없음', '없다', '미입력', '해당없음', '해당사항없음', '몰라요', '모름',
+                                     'test', '테스트', 'ㅇㅇ', 'ㄴㄴ', 'ㅁㅁ', 'asdf', 'na', 'n/a', 'x', 'xx'];
+    function isAdequateHolReason(note) {
+      const s = String(note || '').replace(/\s+/g, '');
+      if (s.length < HOL_REASON_MIN_LEN) return false;
+      if (HOL_REASON_PLACEHOLDERS.includes(s.toLowerCase())) return false;
+      if (new Set(s).size === 1) return false;              // 'ㅇㅇㅇ', '...', '111'
+      if (!/[가-힣A-Za-z]/.test(s)) return false;            // 숫자·기호만
+      return true;
+    }
+
     function confirmHolReason() {
       const note = document.getElementById('hol-note').value.trim();
       if (!note) { say('사유를 입력해주세요. (지정 공휴일도 주6일째도 아닌 지정입니다)'); return; }
+      if (!isAdequateHolReason(note)) {
+        say('사유를 조금 더 구체적으로 적어주세요.\n\n'
+          + '급여 지급 근거로 남고 본사가 마감 때 이 내용만 보고 판단합니다.\n'
+          + '예) 대체 휴무일 근무 · 창립기념일 근무 · 명절 대체근무');
+        return;
+      }
       const cb = HOL_CB;
       closeHolModal();
       if (cb) cb(note);
