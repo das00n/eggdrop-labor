@@ -549,6 +549,31 @@
       background: rgba(255,149,0,0.15); color: var(--text);
       font-size: 13px; line-height: 1.5;
     }
+    .hol-warn {
+      margin: 4px 0 12px; padding: 10px; border-radius: 8px;
+      background: rgba(255,59,48,0.13); color: var(--text);
+      font-size: 12.5px; line-height: 1.5;
+    }
+    .hol-label { display: block; font-size: 12px; color: var(--hint); margin-bottom: 4px; }
+    .hol-note {
+      width: 100%; box-sizing: border-box; padding: 10px; border-radius: 8px;
+      border: 1px solid rgba(127,127,127,0.35); background: var(--section-bg);
+      color: var(--text); font-size: 14px; font-family: inherit; resize: vertical;
+    }
+    /* 지정 공휴일 안내 — 그 날은 전원 자동 가산 */
+    .hol-day-banner {
+      margin: 12px 16px; padding: 12px; border-radius: 10px;
+      background: rgba(225,29,72,0.13); color: var(--text);
+      font-size: 13px; line-height: 1.5;
+    }
+    .ro-banner {
+      margin: 12px 16px; padding: 12px; border-radius: 10px;
+      background: rgba(127,127,127,0.16); color: var(--text);
+      font-size: 13px; line-height: 1.5;
+    }
+    /* 조회 전용 날짜 — 입력 영역을 눌러도 반응하지 않게(수정해도 저장이 안 되므로) */
+    .ro-view { pointer-events: none; opacity: 0.78; }
+    .date-cell.ro { opacity: 0.55; }
     .restore-banner .rb-actions { margin-top: 8px; display: flex; gap: 8px; }
     .restore-banner button {
       flex: 1; padding: 8px; border: none; border-radius: 8px;
@@ -574,6 +599,16 @@
   </header>
 
   <div id="err-banner" class="err-banner" style="display:none"></div>
+
+  <div id="hol-day-banner" class="hol-day-banner" style="display:none">
+    🎌 <b>이 날은 지정 공휴일입니다.</b><br>
+    <span style="color:var(--hint)">근무한 전원에게 공휴일 수당이 자동으로 붙습니다 — 개별 🎌 체크는 필요 없어요.</span>
+  </div>
+
+  <div id="ro-banner" class="ro-banner" style="display:none">
+    🔒 <b>입력 기간이 지난 날짜입니다 — 조회만 가능해요.</b><br>
+    <span style="color:var(--hint)">수정이 필요하면 본사에 알려주세요. 당월(그리고 매월 3일까지는 전월)은 그대로 입력할 수 있습니다.</span>
+  </div>
 
   <div id="restore-banner" class="restore-banner" style="display:none">
     📥 직전에 입력하던 내용이 있습니다. 불러올까요?<br>
@@ -709,12 +744,28 @@
         <h2 class="modal-title" id="date-modal-title" style="margin:0;">📅 날짜 선택</h2>
         <button type="button" class="date-nav-btn" id="date-next" onclick="navMonth(1)">›</button>
       </div>
-      <p class="modal-sub">당월~다음달 스케줄을 입력할 수 있습니다</p>
+      <p class="modal-sub">입력은 당월~다음달 · 지난 달은 조회만 가능합니다</p>
 
       <div class="date-grid" id="date-grid"></div>
 
       <div class="modal-actions">
         <button class="modal-btn secondary" onclick="closeDateModal()">취소</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ───────── 공휴일 근무 사유 — 지정 공휴일도 주6일째도 아닌 🎌 는 근거가 필요 ───────── -->
+  <div class="modal-backdrop" id="hol-modal">
+    <div class="modal">
+      <h2 class="modal-title">🎌 공휴일 근무로 지정할까요?</h2>
+      <p class="modal-sub" id="hol-sub"></p>
+      <div class="hol-warn" id="hol-warn"></div>
+      <label class="hol-label">사유 (급여 지급 근거로 남습니다)</label>
+      <textarea id="hol-note" class="hol-note" rows="3"
+                placeholder="예) 대체 휴무일 근무 · 창립기념일 근무"></textarea>
+      <div class="modal-actions">
+        <button class="modal-btn secondary" onclick="closeHolModal()">취소</button>
+        <button class="modal-btn" id="hol-ok" onclick="confirmHolReason()">지정</button>
       </div>
     </div>
   </div>
@@ -1059,6 +1110,7 @@
       renderMain();
       updateSummary();
       document.getElementById('save-btn').disabled = false;
+      applyReadonly();   // 조회 전용 날짜로 진입했으면 다시 잠근다
       document.getElementById('tabbar').style.display = 'flex';   // 주간표·시간대 인원 탭 활성화
       adjustHeaderOffset();
       maybeOfferRestore();
@@ -1135,8 +1187,24 @@
         `📅 ${STATE.store} · ${d.getMonth()+1}/${d.getDate()}(${days[d.getDay()]})`;
       const subEl = document.getElementById('hdr-sub');
       subEl.innerHTML = (STATE.manager ? `${STATE.manager} 매니저` : '스케줄 입력')
-        + ` · <span class="header-date" onclick="openDateModal()">📅 ${STATE.date} 변경</span>`;
+        + ` · <span class="header-date" onclick="openDateModal()">📅 ${STATE.date} 변경</span>`
+        + (canEditDate() ? '' : ' · 🔒 조회만');
+      applyReadonly();
       adjustHeaderOffset();
+    }
+
+    // 입력 기간이 지난 날짜를 열었을 때 — 배너 + 입력 영역 잠금 + 저장 버튼 잠금.
+    //   수정해도 봇이 거절하므로(save_window_reject), 되돌릴 수 없는 헛수고를 먼저 막는다.
+    function applyReadonly() {
+      const ro = !canEditDate();
+      const bn = document.getElementById('ro-banner');
+      if (bn) bn.style.display = ro ? '' : 'none';
+      const hb = document.getElementById('hol-day-banner');
+      if (hb) hb.style.display = isOfficialHoliday() ? '' : 'none';
+      const main = document.getElementById('main');
+      if (main) main.classList.toggle('ro-view', ro);
+      const btn = document.getElementById('save-btn');
+      if (btn && ro) { btn.disabled = true; btn.textContent = '🔒 조회 전용'; }
     }
 
     // 고정 헤더 실제 높이만큼 본문 상단 여백 — 헤더가 본문/배너를 가리지 않도록.
@@ -1147,7 +1215,7 @@
       const main = document.getElementById('main');
       if (!hdr || !main) return;
       const off = (hdr.offsetHeight + 8) + 'px';
-      const banners = ['err-banner', 'restore-banner']
+      const banners = ['err-banner', 'restore-banner', 'ro-banner', 'hol-day-banner']
         .map(id => document.getElementById(id)).filter(Boolean);
       banners.forEach(b => { b.style.marginTop = ''; });
       const vis = banners.filter(b => b.style.display !== 'none');
@@ -1420,17 +1488,39 @@
     // ───────── 날짜 picker modal ─────────
     let CAL_Y, CAL_M;  // 현재 보고 있는 달력의 연/월
     function _monthBounds() {
-      // 입력 가능 범위: (매월 3일까지는 전월부터) 당월 ~ 다음달.
+      // ★ 입력(저장) 가능 범위: (매월 3일까지는 전월부터) 당월 ~ 다음달.
       // 봇 prev도 _prev_window_start로 동일하게 전월까지 로드해야 안전(빈 화면 저장이 전월 삭제 방지).
+      // 정본은 봇의 save_window_reject — 여기 제한은 화면 편의다(payload 는 조작 가능).
+      // (인천공항점 6월 소급 입력 예외는 2026-07-31 만료 — 정리 완료)
       const t = new Date();
       const cur = t.getFullYear() * 12 + t.getMonth();
-      let minIdx = cur - (t.getDate() <= 3 ? 1 : 0);
-      // ⏳ 임시 예외(2026-07-31까지): 인천공항점 신규 온보딩 — 6월 스케줄 소급 입력 허용.
-      //    만료 후 자동 원복(코드 삭제는 8월에 정리). 봇 prev는 최근 3개월 로드라 6월 포함 — 안전.
-      if (STATE.store === '인천공항점' && t.getTime() <= new Date('2026-07-31T23:59:59+09:00').getTime()) {
-        minIdx = Math.min(minIdx, 2026 * 12 + 5);   // 2026년 6월 (0-based month 5)
+      return { minIdx: cur - (t.getDate() <= 3 ? 1 : 0), maxIdx: cur + 1 };
+    }
+
+    // 조회 가능 범위 — 당월 포함 최근 3개월 ~ 다음달.
+    //   마감의 목적은 '수정 금지'인데 date picker 가 좁아서 **지난 스케줄을 볼 수조차 없었다**
+    //   (2026-08 요청). 봇이 prev 를 최근 3개월만 로드하므로(_view_window_start) 그보다 과거를
+    //   열면 빈 화면이 된다 — 두 범위를 같이 움직여야 한다.
+    const VIEW_MONTHS_BACK = 2;
+    function _viewMonthBounds() {
+      const { minIdx, maxIdx } = _monthBounds();
+      const t = new Date();
+      const cur = t.getFullYear() * 12 + t.getMonth();
+      let vmin = cur - VIEW_MONTHS_BACK;
+      // 봇이 URL 한도 때문에 데이터를 줄여 보냈으면 그 범위까지만 연다(payload.prev_from).
+      // 빈 달을 열어두면 "지난 스케줄이 사라졌다"로 읽힌다.
+      if (STATE.prev_from) {
+        const [py, pm] = String(STATE.prev_from).split('-').map(Number);
+        if (py && pm) vmin = Math.max(vmin, py * 12 + (pm - 1));
       }
-      return { minIdx, maxIdx: cur + 1 };
+      return { minIdx: Math.min(minIdx, vmin), maxIdx };
+    }
+    // 그 날짜가 저장 가능한가 (기본값 = 지금 보고 있는 날짜)
+    function canEditDate(dateStr) {
+      const { minIdx, maxIdx } = _monthBounds();
+      const d = new Date((dateStr || STATE.date) + 'T00:00:00');
+      const idx = d.getFullYear() * 12 + d.getMonth();
+      return idx >= minIdx && idx <= maxIdx;
     }
     function openDateModal() {
       const d = new Date(STATE.date);
@@ -1439,7 +1529,7 @@
       document.getElementById('date-modal').classList.add('show');
     }
     function navMonth(delta) {
-      const { minIdx, maxIdx } = _monthBounds();
+      const { minIdx, maxIdx } = _viewMonthBounds();
       const idx = CAL_Y * 12 + CAL_M + delta;
       if (idx < minIdx || idx > maxIdx) return;
       CAL_Y = Math.floor(idx / 12); CAL_M = idx % 12;
@@ -1450,11 +1540,14 @@
       const first = new Date(y, m, 1);
       const last = new Date(y, m + 1, 0);
       const todayStr = new Date().toISOString().split('T')[0];
-      document.getElementById('date-modal-title').textContent = `${y}년 ${m+1}월`;
-      const { minIdx, maxIdx } = _monthBounds();
+      const { minIdx, maxIdx } = _viewMonthBounds();
       const idx = y * 12 + m;
       document.getElementById('date-prev').disabled = (idx <= minIdx);
       document.getElementById('date-next').disabled = (idx >= maxIdx);
+      // 저장 가능 범위 밖의 달이면 달력에서 밝혀둔다 — 눌러서 열린 뒤에야 알면 늦다
+      const roMonth = !canEditDate(`${y}-${String(m+1).padStart(2,'0')}-01`);
+      document.getElementById('date-modal-title').textContent =
+        `${y}년 ${m+1}월` + (roMonth ? ' 🔒 조회만' : '');
       const grid = document.getElementById('date-grid');
       grid.innerHTML = '';
       ['일','월','화','수','목','금','토'].forEach(dn => {
@@ -1475,7 +1568,13 @@
         c.className = 'date-cell';
         if (dateStr === STATE.date) c.classList.add('selected');
         if (dateStr === todayStr) c.classList.add('today');
+        if (roMonth) { c.classList.add('ro'); c.title = '조회만 가능 (입력 기간 지남)'; }
         c.textContent = day;
+        if (isOfficialHoliday(dateStr)) {
+          c.title = (c.title ? c.title + ' · ' : '') + '지정 공휴일';
+          c.insertAdjacentHTML('beforeend',
+            '<span style="display:block;font-size:8px;line-height:1">🎌</span>');
+        }
         c.onclick = () => pickDate(dateStr);
         grid.appendChild(c);
       }
@@ -1670,7 +1769,7 @@
             <div class="break-chip" onclick="openBreakModal('${emp.id}')">${ent.break_start && ent.break_end ? `휴게 ${ent.break_start}~${ent.break_end}` : '휴게 없음'}</div>
             <div class="work-hours ${incomplete ? 'warn' : ''}">${workStr}</div>
           </div>
-          <div class="half-row">${emp.grade !== 'Crew' ? `<div class="half-chip${ent.half ? ' active' : ''}" onclick="toggleHalf('${emp.id}')">${ent.half ? '✓ 반차 (0.5일)' : '☐ 반차 (절반 근무)'}</div>` : ''}<div class="half-chip hol-chip${ent.hol ? ' active' : ''}" onclick="toggleHol('${emp.id}')" style="margin-left:6px">${ent.hol ? '✓ 🎌 공휴일 근무' : '☐ 🎌 공휴일 근무'}</div></div>
+          <div class="half-row">${emp.grade !== 'Crew' ? `<div class="half-chip${ent.half ? ' active' : ''}" onclick="toggleHalf('${emp.id}')">${ent.half ? '✓ 반차 (0.5일)' : '☐ 반차 (절반 근무)'}</div>` : ''}${isOfficialHoliday() ? `<div class="half-chip active" style="margin-left:6px;pointer-events:none">🎌 지정 공휴일 (자동)</div>` : `<div class="half-chip hol-chip${ent.hol ? ' active' : ''}" onclick="toggleHol('${emp.id}')" style="margin-left:6px">${ent.hol ? '✓ 🎌 공휴일 근무' : '☐ 🎌 공휴일 근무'}</div>`}</div>
           ${dupNote}
         ` : `
           <div class="emp-time-row">
@@ -1834,6 +1933,7 @@
         sumEl.textContent = `${count}명 · ${totalH.toFixed(1)}h 근무`;
         if (btn) { btn.disabled = false; btn.textContent = '💾 저장'; }
       }
+      applyReadonly();   // 조회 전용 날짜면 위에서 켠 저장 버튼을 다시 잠근다
     }
 
     // ───────── 토글 ─────────
@@ -1864,11 +1964,79 @@
       refreshRow(empId);
     }
 
+    // ───────── 지정 공휴일 (holidays 테이블) ─────────
+    //   그 날 자체가 공휴일이면 **전원 자동으로** 공휴 가산이 붙는다(봇 official_hol).
+    //   그래서 개별 🎌 는 필요 없다 — 눌러도 더해지지 않고, 주간표에서 개별 지정(주6일째)과
+    //   구분이 안 된다. 날짜 단위로 표시하고 개별 토글은 감춘다.
+    const officialHolidays = () => new Set(STATE.official_holidays || []);
+    function isOfficialHoliday(dateStr) {
+      return officialHolidays().has(dateStr || STATE.date);
+    }
+
+    // 그 주에 이 사람이 며칠 근무하나 (월~일, 화면의 미저장 편집분 반영)
+    function weekWorkdays(dateStr, empId) {
+      const monday = weekStartOf(dateStr);
+      let n = 0;
+      for (let i = 0; i < 7; i++) {
+        const d = addDays(monday, i);
+        const edit = (WEEK_EDITS[d] || {})[empId];
+        if (edit) { if (edit.on && edit.in && edit.out) n++; continue; }
+        // 지금 보고 있는 날은 화면의 입력이 정본(저장 전 편집 반영).
+        // 단 entries 에 아직 없는 직원이면 저장분으로 판단한다 — 없다고 0일로 세면
+        // 6일째를 5일째로 잘못 보고 근거 있는 🎌 에 사유를 요구한다.
+        if (d === STATE.date && STATE.entries[empId]) {
+          const ent = STATE.entries[empId];
+          if (ent.on && ent.in && ent.out) n++;
+          continue;
+        }
+        const p = ((STATE.prev_by_date_emp || {})[d] || {})[empId];
+        if (p && p.in && p.out) n++;
+      }
+      return n;
+    }
+
+    // 개별 🎌 의 근거: 지정 공휴일이거나, 그 주 6일 이상 근무(6일째가 휴일근로).
+    //   둘 다 아니면 근거가 없다 — 경고하고 사유를 받는다(holiday_work.note).
+    function holNeedsReason(dateStr, empId) {
+      return !isOfficialHoliday(dateStr) && weekWorkdays(dateStr, empId) < 6;
+    }
+
+    // 사유 입력 modal — 콜백에 사유를 넘긴다(취소하면 지정하지 않는다)
+    let HOL_CB = null;
+    function askHolReason(subject, days, cb) {
+      HOL_CB = cb;
+      document.getElementById('hol-sub').textContent = subject;
+      document.getElementById('hol-warn').innerHTML =
+        `⚠️ 이 날은 <b>지정 공휴일이 아니고</b>, 이 직원은 그 주에 <b>${days}일</b> 근무합니다.<br>`
+        + `공휴일 수당은 지정 공휴일이거나 <b>주 6일 이상</b> 근무한 6일째에 붙습니다. `
+        + `그래도 지정하려면 사유를 남겨주세요 — 본사가 마감 때 확인합니다.`;
+      document.getElementById('hol-note').value = '';
+      document.getElementById('hol-modal').classList.add('show');
+      setTimeout(() => { try { document.getElementById('hol-note').focus(); } catch (e) {} }, 50);
+    }
+    function closeHolModal() {
+      document.getElementById('hol-modal').classList.remove('show');
+      HOL_CB = null;
+    }
+    function confirmHolReason() {
+      const note = document.getElementById('hol-note').value.trim();
+      if (!note) { say('사유를 입력해주세요. (지정 공휴일도 주6일째도 아닌 지정입니다)'); return; }
+      const cb = HOL_CB;
+      closeHolModal();
+      if (cb) cb(note);
+    }
+
     // ───────── 공휴일 근무 토글 (주6일째 등 지정 — 급여 공휴일 수당 계산용) ─────────
     function toggleHol(empId) {
       const ent = STATE.entries[empId];
-      ent.hol = !ent.hol;
-      refreshRow(empId);
+      if (ent.hol) {   // 해제는 그냥 (사유도 같이 지운다)
+        ent.hol = false; ent.holNote = null; refreshRow(empId);
+        return;
+      }
+      const done = (note) => { ent.hol = true; ent.holNote = note || null; refreshRow(empId); };
+      if (!holNeedsReason(STATE.date, empId)) { done(null); return; }
+      const emp = STATE.employees.find(e => e.id === empId) || {};
+      askHolReason(`${emp.name || ''} · ${STATE.date}`, weekWorkdays(STATE.date, empId), done);
     }
 
     // ───────── 출/퇴근 picker modal ─────────
@@ -2267,6 +2435,11 @@
 
     // ───────── 저장 ─────────
     function onSave() {
+      // 조회 전용 날짜 — 버튼도 잠기지만, 어떤 경로로 들어와도 전송하지 않는다.
+      if (!canEditDate()) {
+        say('🔒 입력 기간이 지난 날짜라 저장할 수 없습니다.\n조회만 가능해요 — 수정이 필요하면 본사에 알려주세요.');
+        return;
+      }
       // 출근 ON + 시간 미입력 직원 차단
       const incomplete = STATE.employees.filter(emp => {
         const ent = STATE.entries[emp.id];
@@ -2331,6 +2504,8 @@
           hours: work,
           half_day: on ? !!ent.half : false,
           holiday: on ? !!ent.hol : false,
+          // 지정 공휴일도 주6일째도 아닌 🎌 의 사유 — 봇이 holiday_work.note 에 남긴다
+          holiday_note: (on && ent.hol) ? (ent.holNote || null) : null,
           leave: (!on && !isDeleting) ? !!ent.leave : false,
         };
         // Crew 시급 변경분 전달 (개인별)
@@ -2474,7 +2649,8 @@
         const on = e.on && e.in && e.out;
         const edited = (WEEK_EDITS[d] || {})[WK_EMP] && _wkSig(wkEntry(d, WK_EMP)) !== _wkSig(wkBaseEntry(d, WK_EMP));
         h += `<div class="wk-day${on ? '' : ' is-off'}">`
-           + `<span class="wk-date">${WDAYS[i]}${edited ? '✏️' : ''}<span class="wk-dnum">${d.slice(5).replace('-', '/')}</span></span>`
+           + `<span class="wk-date">${WDAYS[i]}${edited ? '✏️' : ''}${isOfficialHoliday(d) ? '🎌' : ''}`
+           + `<span class="wk-dnum">${d.slice(5).replace('-', '/')}${isOfficialHoliday(d) ? ' 공휴일' : ''}</span></span>`
            + `<button type="button" class="wk-toggle" onclick="wkToggle('${d}')">${on ? '근무' : '휴무'}</button>`;
         if (on) {
           const emp = STATE.employees.find(x => x.id === WK_EMP);
@@ -2483,7 +2659,9 @@
              + `<button type="button" class="wk-chip" onclick="wkOpenTime('${d}','out')">${e.out}</button>`
              + `<button type="button" class="wk-chip wk-break" onclick="wkOpenBreak('${d}')" title="휴게">☕${(e.breakH || 0).toFixed(1)}</button>`
              + (emp && emp.grade !== 'Crew' ? `<button type="button" class="wk-mini${e.half ? ' on-half' : ''}" onclick="wkToggleHalf('${d}')" title="반차">반</button>` : '')
-             + `<button type="button" class="wk-mini${e.hol ? ' on-hol' : ''}" onclick="wkToggleHol('${d}')" title="공휴일 근무">🎌공휴</button>`;
+             // 지정 공휴일은 전원 자동 — 날짜(wk-date)에 이미 표시했고 개별 토글은 숨긴다
+             + (isOfficialHoliday(d) ? ''
+                : `<button type="button" class="wk-mini${e.hol ? ' on-hol' : ''}" onclick="wkToggleHol('${d}')" title="공휴일 근무">🎌공휴</button>`);
         } else {
           h += `<button type="button" class="wk-mini${e.leave ? ' on-leave' : ''}" onclick="wkToggleLeave('${d}')" title="연차 사용">🏖연차</button>`;
         }
@@ -2518,7 +2696,14 @@
     }
     function wkToggleHalf(d) { const e = wkEdit(d, WK_EMP); e.half = !e.half; renderWInput(); }
     function wkToggleLeave(d) { const e = wkEdit(d, WK_EMP); e.leave = !e.leave; renderWInput(); }
-    function wkToggleHol(d) { const e = wkEdit(d, WK_EMP); e.hol = !e.hol; renderWInput(); }
+    function wkToggleHol(d) {
+      const e = wkEdit(d, WK_EMP);
+      if (e.hol) { e.hol = false; e.holNote = null; renderWInput(); return; }
+      const done = (note) => { e.hol = true; e.holNote = note || null; renderWInput(); };
+      if (!holNeedsReason(d, WK_EMP)) { done(null); return; }
+      const emp = STATE.employees.find(x => x.id === WK_EMP) || {};
+      askHolReason(`${emp.name || ''} · ${d}`, weekWorkdays(d, WK_EMP), done);
+    }
     function wkOpenTime(d, field) { WK_CTX = { date: d, empId: WK_EMP }; wkEdit(d, WK_EMP); openTimeModal('__WK__', field); }
     function wkOpenBreak(d) { WK_CTX = { date: d, empId: WK_EMP }; wkEdit(d, WK_EMP); openBreakModal('__WK__'); }
     function wkCopyPrevWeek() {
@@ -2569,6 +2754,7 @@
                    hours: on ? calcWork(e.in, e.out, e.breakH || 0) : 0,
                    half_day: on ? !!e.half : false,
                    holiday: on ? !!e.hol : false,
+                   holiday_note: (on && e.hol) ? (e.holNote || null) : null,
                    leave: on ? false : !!e.leave };
         });
         const support = d === STATE.date ? (STATE.supportEntries || []).slice()
