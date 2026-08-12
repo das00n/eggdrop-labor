@@ -549,6 +549,14 @@
       background: rgba(255,149,0,0.15); color: var(--text);
       font-size: 13px; line-height: 1.5;
     }
+    .ro-banner {
+      margin: 12px 16px; padding: 12px; border-radius: 10px;
+      background: rgba(127,127,127,0.16); color: var(--text);
+      font-size: 13px; line-height: 1.5;
+    }
+    /* 조회 전용 날짜 — 입력 영역을 눌러도 반응하지 않게(수정해도 저장이 안 되므로) */
+    .ro-view { pointer-events: none; opacity: 0.78; }
+    .date-cell.ro { opacity: 0.55; }
     .restore-banner .rb-actions { margin-top: 8px; display: flex; gap: 8px; }
     .restore-banner button {
       flex: 1; padding: 8px; border: none; border-radius: 8px;
@@ -574,6 +582,11 @@
   </header>
 
   <div id="err-banner" class="err-banner" style="display:none"></div>
+
+  <div id="ro-banner" class="ro-banner" style="display:none">
+    🔒 <b>입력 기간이 지난 날짜입니다 — 조회만 가능해요.</b><br>
+    <span style="color:var(--hint)">수정이 필요하면 본사에 알려주세요. 당월(그리고 매월 3일까지는 전월)은 그대로 입력할 수 있습니다.</span>
+  </div>
 
   <div id="restore-banner" class="restore-banner" style="display:none">
     📥 직전에 입력하던 내용이 있습니다. 불러올까요?<br>
@@ -1059,6 +1072,7 @@
       renderMain();
       updateSummary();
       document.getElementById('save-btn').disabled = false;
+      applyReadonly();   // 조회 전용 날짜로 진입했으면 다시 잠근다
       document.getElementById('tabbar').style.display = 'flex';   // 주간표·시간대 인원 탭 활성화
       adjustHeaderOffset();
       maybeOfferRestore();
@@ -1135,8 +1149,22 @@
         `📅 ${STATE.store} · ${d.getMonth()+1}/${d.getDate()}(${days[d.getDay()]})`;
       const subEl = document.getElementById('hdr-sub');
       subEl.innerHTML = (STATE.manager ? `${STATE.manager} 매니저` : '스케줄 입력')
-        + ` · <span class="header-date" onclick="openDateModal()">📅 ${STATE.date} 변경</span>`;
+        + ` · <span class="header-date" onclick="openDateModal()">📅 ${STATE.date} 변경</span>`
+        + (canEditDate() ? '' : ' · 🔒 조회만');
+      applyReadonly();
       adjustHeaderOffset();
+    }
+
+    // 입력 기간이 지난 날짜를 열었을 때 — 배너 + 입력 영역 잠금 + 저장 버튼 잠금.
+    //   수정해도 봇이 거절하므로(save_window_reject), 되돌릴 수 없는 헛수고를 먼저 막는다.
+    function applyReadonly() {
+      const ro = !canEditDate();
+      const bn = document.getElementById('ro-banner');
+      if (bn) bn.style.display = ro ? '' : 'none';
+      const main = document.getElementById('main');
+      if (main) main.classList.toggle('ro-view', ro);
+      const btn = document.getElementById('save-btn');
+      if (btn && ro) { btn.disabled = true; btn.textContent = '🔒 조회 전용'; }
     }
 
     // 고정 헤더 실제 높이만큼 본문 상단 여백 — 헤더가 본문/배너를 가리지 않도록.
@@ -1147,7 +1175,7 @@
       const main = document.getElementById('main');
       if (!hdr || !main) return;
       const off = (hdr.offsetHeight + 8) + 'px';
-      const banners = ['err-banner', 'restore-banner']
+      const banners = ['err-banner', 'restore-banner', 'ro-banner']
         .map(id => document.getElementById(id)).filter(Boolean);
       banners.forEach(b => { b.style.marginTop = ''; });
       const vis = banners.filter(b => b.style.display !== 'none');
@@ -1420,17 +1448,32 @@
     // ───────── 날짜 picker modal ─────────
     let CAL_Y, CAL_M;  // 현재 보고 있는 달력의 연/월
     function _monthBounds() {
-      // 입력 가능 범위: (매월 3일까지는 전월부터) 당월 ~ 다음달.
+      // ★ 입력(저장) 가능 범위: (매월 3일까지는 전월부터) 당월 ~ 다음달.
       // 봇 prev도 _prev_window_start로 동일하게 전월까지 로드해야 안전(빈 화면 저장이 전월 삭제 방지).
+      // 정본은 봇의 save_window_reject — 여기 제한은 화면 편의다(payload 는 조작 가능).
+      // (인천공항점 6월 소급 입력 예외는 2026-07-31 만료 — 정리 완료)
       const t = new Date();
       const cur = t.getFullYear() * 12 + t.getMonth();
-      let minIdx = cur - (t.getDate() <= 3 ? 1 : 0);
-      // ⏳ 임시 예외(2026-07-31까지): 인천공항점 신규 온보딩 — 6월 스케줄 소급 입력 허용.
-      //    만료 후 자동 원복(코드 삭제는 8월에 정리). 봇 prev는 최근 3개월 로드라 6월 포함 — 안전.
-      if (STATE.store === '인천공항점' && t.getTime() <= new Date('2026-07-31T23:59:59+09:00').getTime()) {
-        minIdx = Math.min(minIdx, 2026 * 12 + 5);   // 2026년 6월 (0-based month 5)
-      }
-      return { minIdx, maxIdx: cur + 1 };
+      return { minIdx: cur - (t.getDate() <= 3 ? 1 : 0), maxIdx: cur + 1 };
+    }
+
+    // 조회 가능 범위 — 당월 포함 최근 3개월 ~ 다음달.
+    //   마감의 목적은 '수정 금지'인데 date picker 가 좁아서 **지난 스케줄을 볼 수조차 없었다**
+    //   (2026-08 요청). 봇이 prev 를 최근 3개월만 로드하므로(_view_window_start) 그보다 과거를
+    //   열면 빈 화면이 된다 — 두 범위를 같이 움직여야 한다.
+    const VIEW_MONTHS_BACK = 2;
+    function _viewMonthBounds() {
+      const { minIdx, maxIdx } = _monthBounds();
+      const t = new Date();
+      const cur = t.getFullYear() * 12 + t.getMonth();
+      return { minIdx: Math.min(minIdx, cur - VIEW_MONTHS_BACK), maxIdx };
+    }
+    // 그 날짜가 저장 가능한가 (기본값 = 지금 보고 있는 날짜)
+    function canEditDate(dateStr) {
+      const { minIdx, maxIdx } = _monthBounds();
+      const d = new Date((dateStr || STATE.date) + 'T00:00:00');
+      const idx = d.getFullYear() * 12 + d.getMonth();
+      return idx >= minIdx && idx <= maxIdx;
     }
     function openDateModal() {
       const d = new Date(STATE.date);
@@ -1439,7 +1482,7 @@
       document.getElementById('date-modal').classList.add('show');
     }
     function navMonth(delta) {
-      const { minIdx, maxIdx } = _monthBounds();
+      const { minIdx, maxIdx } = _viewMonthBounds();
       const idx = CAL_Y * 12 + CAL_M + delta;
       if (idx < minIdx || idx > maxIdx) return;
       CAL_Y = Math.floor(idx / 12); CAL_M = idx % 12;
@@ -1450,11 +1493,14 @@
       const first = new Date(y, m, 1);
       const last = new Date(y, m + 1, 0);
       const todayStr = new Date().toISOString().split('T')[0];
-      document.getElementById('date-modal-title').textContent = `${y}년 ${m+1}월`;
-      const { minIdx, maxIdx } = _monthBounds();
+      const { minIdx, maxIdx } = _viewMonthBounds();
       const idx = y * 12 + m;
       document.getElementById('date-prev').disabled = (idx <= minIdx);
       document.getElementById('date-next').disabled = (idx >= maxIdx);
+      // 저장 가능 범위 밖의 달이면 달력에서 밝혀둔다 — 눌러서 열린 뒤에야 알면 늦다
+      const roMonth = !canEditDate(`${y}-${String(m+1).padStart(2,'0')}-01`);
+      document.getElementById('date-modal-title').textContent =
+        `${y}년 ${m+1}월` + (roMonth ? ' 🔒 조회만' : '');
       const grid = document.getElementById('date-grid');
       grid.innerHTML = '';
       ['일','월','화','수','목','금','토'].forEach(dn => {
@@ -1475,6 +1521,7 @@
         c.className = 'date-cell';
         if (dateStr === STATE.date) c.classList.add('selected');
         if (dateStr === todayStr) c.classList.add('today');
+        if (roMonth) { c.classList.add('ro'); c.title = '조회만 가능 (입력 기간 지남)'; }
         c.textContent = day;
         c.onclick = () => pickDate(dateStr);
         grid.appendChild(c);
@@ -1834,6 +1881,7 @@
         sumEl.textContent = `${count}명 · ${totalH.toFixed(1)}h 근무`;
         if (btn) { btn.disabled = false; btn.textContent = '💾 저장'; }
       }
+      applyReadonly();   // 조회 전용 날짜면 위에서 켠 저장 버튼을 다시 잠근다
     }
 
     // ───────── 토글 ─────────
@@ -2267,6 +2315,11 @@
 
     // ───────── 저장 ─────────
     function onSave() {
+      // 조회 전용 날짜 — 버튼도 잠기지만, 어떤 경로로 들어와도 전송하지 않는다.
+      if (!canEditDate()) {
+        say('🔒 입력 기간이 지난 날짜라 저장할 수 없습니다.\n조회만 가능해요 — 수정이 필요하면 본사에 알려주세요.');
+        return;
+      }
       // 출근 ON + 시간 미입력 직원 차단
       const incomplete = STATE.employees.filter(emp => {
         const ent = STATE.entries[emp.id];
