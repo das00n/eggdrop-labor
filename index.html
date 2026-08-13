@@ -2021,7 +2021,7 @@
     // 사유가 근거로 쓸 만한가 — 봇 is_adequate_holiday_reason 과 같은 규칙.
     //   급여 지급 근거로 남는 값이라(holiday_work.note) 자리만 채운 값은 사유가 없는 것과 같다.
     //   여기서 막지 않으면 저장은 되고 매장방에 경고가 올라간다 — 왕복하지 않게 화면에서 막는다.
-    const HOL_REASON_MIN_LEN = 3;
+    const HOL_REASON_MIN_LEN = 2;   // '행사'·'특근' 처럼 두 글자로 적는 습관이 있다
     const HOL_REASON_PLACEHOLDERS = ['없음', '없다', '미입력', '해당없음', '해당사항없음', '몰라요', '모름',
                                      'test', '테스트', 'ㅇㅇ', 'ㄴㄴ', 'ㅁㅁ', 'asdf', 'na', 'n/a', 'x', 'xx'];
     function isAdequateHolReason(note) {
