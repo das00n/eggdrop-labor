@@ -467,6 +467,8 @@
     .wk td.lv { color: #0d9488; font-weight: 700; }
     @media (prefers-color-scheme: dark) { .wk td.lv { color: #5eead4; } }
     .wk .mk { font-size: 9px; font-weight: 700; color: #e11d48; }
+    /* 지정 공휴일 — 날짜 머리행에 표시 (개별 🎌 와 구분되게 같은 색) */
+    .wk .hol-day { font-size: 9px; font-weight: 700; color: #e11d48; line-height: 1.15; }
     .wk .dcol { position: sticky; left: 0; background: var(--section-bg); font-weight: 700; z-index: 1; }
     .wk .grade { display: block; font-size: 9px; font-weight: 700; color: var(--hint); line-height: 1.15; }
     .wk-send { display: block; width: 100%; margin: 14px 0 4px; padding: 13px; font-size: 14px; font-weight: 700;
@@ -2823,14 +2825,19 @@
       let h = `<div class="av-nav"><button type="button" onclick="navWeek(-1)">‹</button><b>📆 주간표 ${label}</b><button type="button" onclick="navWeek(1)">›</button></div>`;
       h += `<div class="av-note">저장된 스케줄 기준 (오늘 날짜는 입력 중인 값 반영) · 최근 3개월 조회 가능${extras.size ? ' · ※ = 현재 명단 외(퇴사·이동)' : ''}${supRows.size ? ' · (지원) = 타 매장에서 지원' : ''}</div>`;
       const dayMaps = ds.map(d => { const m = {}; dayOwn(d).forEach(o => { m[o.id] = o; }); return m; });
-      h += `<div class="wk-wrap"><table class="wk"><tr><th class="dcol">직원</th>${ds.map((d, i) => `<th>${d.slice(5).replace('-', '/')}<br>${WDAYS[i]}</th>`).join('')}</tr>`;
+      // 지정 공휴일은 **날짜 머리행**에 표시한다 — 그 날은 전원 자동 가산이라
+      // 사람마다 🎌 를 붙이면 개별 지정(주6일째 등)과 구분이 안 된다. 봇이 그리는
+      // 주간표 이미지(send_weekly_table)와 같은 규칙.
+      h += `<div class="wk-wrap"><table class="wk"><tr><th class="dcol">직원</th>${ds.map((d, i) => `<th>${d.slice(5).replace('-', '/')}<br>${WDAYS[i]}${isOfficialHoliday(d) ? '<br><span class="hol-day">🎌 공휴일</span>' : ''}</th>`).join('')}</tr>`;
       emps.forEach(e => {
         // 직급 — 이름 위 줄, 가운데 정렬 (명단 외 ※ 직원은 직급 미상 → 생략)
         h += `<tr><td class="dcol">${e.grade ? `<span class="grade">${e.grade}</span>` : ''}${e.name}</td>`;
         h += ds.map((d, i) => {
           const o = dayMaps[i][e.id];
           if (o) {
-            const mk = (o.half ? '반차' : '') + (o.half && o.hol ? '·' : '') + (o.hol ? '🎌' : '');
+            // 지정 공휴일인 날은 개별 🎌 를 붙이지 않는다 (머리행에 이미 표시)
+            const hol = !!o.hol && !isOfficialHoliday(d);
+            const mk = (o.half ? '반차' : '') + (o.half && hol ? '·' : '') + (hol ? '🎌' : '');
             return `<td>${o.in}<br>${o.out}${mk ? `<br><span class="mk">${mk}</span>` : ''}</td>`;
           }
           return dayLeave(d, e.id) ? '<td class="lv">연차</td>' : '<td class="off">—</td>';
@@ -2892,7 +2899,8 @@
       const label = `${ds[0].slice(5).replace('-', '/')} ~ ${ds[6].slice(5).replace('-', '/')}`;
       let h = `<div class="av-nav"><button type="button" onclick="navWeek(-1)">‹</button><b>👥 시간대 인원 ${label}</b><button type="button" onclick="navWeek(1)">›</button></div>`;
       h += `<div class="av-note">칸 = 그 시간대 근무 인원(지원 포함 · 휴게 반영). 1명=초록(양호) · 많을수록 노랑→주황(인건비 주의) · 없으면 빨강(경고). 칸을 누르면 명단이 뜹니다.</div>`;
-      h += `<table class="hm"><tr><th class="hcol"></th>${ds.map((d, i) => `<th>${WDAYS[i]}<br><span style="font-weight:400;color:var(--hint)">${d.slice(8)}</span></th>`).join('')}</tr>`;
+      // 공휴일은 인원 배치가 달라지므로 여기서도 표시한다 (좁은 칸이라 아이콘만)
+      h += `<table class="hm"><tr><th class="hcol"></th>${ds.map((d, i) => `<th>${WDAYS[i]}${isOfficialHoliday(d) ? '🎌' : ''}<br><span style="font-weight:400;color:var(--hint)">${d.slice(8)}</span></th>`).join('')}</tr>`;
       for (let hr = lo; hr < hi; hr++) {
         h += `<tr><td class="hcol">${pad2(hr)}시</td>`;
         ds.forEach((d, i) => {
