@@ -1624,14 +1624,18 @@
 
     /** 지원 대상 후보 — 'in' 이면 출처매장 직원, 'out' 이면 우리 매장 직원. */
     function supPool() {
+      // label = 동명이인 꼬리표가 붙은 표기 이름('김세은A'). **목록에는 이것을 보여준다** —
+      // 같은 매장에 동명이인이 있으면 이름만으로는 두 줄이 똑같아 어느 쪽인지 알 수 없고,
+      // 잘못 고르면 남의 근무기록에 붙는다(이 기능이 막으려던 바로 그 사고다).
+      // 서버로 보내는 name 은 꼬리표 없는 실제 이름이어야 한다 — 서버가 이름으로도 찾는다.
       if (SUP_CTX.direction === 'in' && SUP_CTX.other_store) {
         return (STATE.all_stores[SUP_CTX.other_store] || [])
-          .map(e => ({ name: e.n, grade: e.g, id: e.i }));
+          .map(e => ({ name: e.n, grade: e.g, id: e.i, label: e.l || e.n }));
       }
       if (SUP_CTX.direction === 'out') {
         // 아직 저장 전인 신규 직원은 id 가 없어 지원 대상이 될 수 없다
         return STATE.employees.filter(e => !e.isNew)
-          .map(e => ({ name: e.name, grade: e.grade, id: e.id }));
+          .map(e => ({ name: e.name, grade: e.grade, id: e.id, label: e.label || e.name }));
       }
       return [];
     }
@@ -1650,10 +1654,10 @@
         sel.innerHTML = '<option value="">먼저 매장을 선택해주세요</option>';
         return;
       }
-      // 이름 오름차순 — 명단에서 눈으로 찾는 순서
-      pool.sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+      // 표기 이름 오름차순 — 명단에서 눈으로 찾는 순서. 동명이인은 꼬리표까지 보고 고른다.
+      pool.sort((a, b) => (a.label || a.name).localeCompare(b.label || b.name, 'ko'));
       sel.innerHTML = '<option value="">직원 선택</option>'
-        + pool.map(e => `<option value="${e.id}">${e.name} (${e.grade})</option>`).join('')
+        + pool.map(e => `<option value="${e.id}">${e.label || e.name} (${e.grade})</option>`).join('')
         + '<option value="__manual__">— 목록에 없어요 (직접 입력)</option>';
     }
 
