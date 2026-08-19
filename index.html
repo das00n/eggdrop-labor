@@ -732,9 +732,21 @@
         <option value="">매장 선택</option>
       </select>
 
-      <div class="modal-section-title">직원 이름</div>
-      <input class="form-input" id="sup-name" type="text" placeholder="이름 입력" autocomplete="off" oninput="supOnNameInput()">
-      <div class="sup-name-suggest" id="sup-suggest" style="display:none"></div>
+      <!-- 이름을 직접 치면 오타·미등록 이름이 그대로 통과하고, 서버는 이름으로 사람을
+           다시 찾다가 동명이인에서 추측하게 된다(2026-08 김세은). 등록된 직원 중에서만
+           고르게 하고 employee_id 를 함께 보낸다 — 이름 매칭 자체가 사라진다. -->
+      <div class="modal-section-title">직원</div>
+      <select class="form-input" id="sup-emp" onchange="supPickEmp(this.value)">
+        <option value="">먼저 매장을 선택해주세요</option>
+      </select>
+      <div id="sup-manual-area" style="display:none">
+        <input class="form-input" id="sup-name" type="text" placeholder="이름 입력"
+               autocomplete="off" oninput="supOnNameInput()" style="margin-top:8px">
+        <p class="modal-sub" style="margin-top:6px;color:var(--warn,#c47f17)">
+          ⚠️ 목록에 없는 분입니다. 그 매장에 아직 등록되지 않았을 수 있어요 —
+          이름이 정확한지 확인해주세요. (그 매장에서 먼저 직원 등록을 하는 편이 정확합니다)
+        </p>
+      </div>
 
       <div class="modal-section-title">직급</div>
       <div class="grade-picker" id="sup-grades"></div>
@@ -1547,11 +1559,12 @@
     let SUP_CTX = null;  // {direction, other_store, name, grade, in, out, breakH, break_start, break_end, hours}
 
     function openSupportModal() {
-      SUP_CTX = { direction: null, other_store: '', name: '', grade: null,
+      SUP_CTX = { direction: null, other_store: '', name: '', emp_id: null, grade: null,
                   in: null, out: null, breakH: 0, break_start: null, break_end: null, hours: 0, half: false };
       document.getElementById('sup-name').value = '';
       document.getElementById('sup-info').textContent = '';
-      document.getElementById('sup-suggest').style.display = 'none';
+      document.getElementById('sup-manual-area').style.display = 'none';
+      document.getElementById('sup-emp').innerHTML = '<option value="">먼저 방향을 선택해주세요</option>';
       document.querySelectorAll('.sup-dir-chip').forEach(c => c.classList.remove('selected'));
 
       // 매장 드롭다운 (자기 매장 제외)
@@ -1604,40 +1617,64 @@
     }
 
     function supOnNameInput() {
-      const v = document.getElementById('sup-name').value.trim();
-      SUP_CTX.name = v;
-      supRefreshSuggest();
+      // '목록에 없어요' 를 고른 뒤에만 쓰인다 — id 없이 이름만 간다(서버가 이름으로 찾는다)
+      SUP_CTX.name = document.getElementById('sup-name').value.trim();
+      SUP_CTX.emp_id = null;
+    }
+
+    /** 지원 대상 후보 — 'in' 이면 출처매장 직원, 'out' 이면 우리 매장 직원. */
+    function supPool() {
+      if (SUP_CTX.direction === 'in' && SUP_CTX.other_store) {
+        return (STATE.all_stores[SUP_CTX.other_store] || [])
+          .map(e => ({ name: e.n, grade: e.g, id: e.i }));
+      }
+      if (SUP_CTX.direction === 'out') {
+        // 아직 저장 전인 신규 직원은 id 가 없어 지원 대상이 될 수 없다
+        return STATE.employees.filter(e => !e.isNew)
+          .map(e => ({ name: e.name, grade: e.grade, id: e.id }));
+      }
+      return [];
     }
 
     function supRefreshSuggest() {
-      const box = document.getElementById('sup-suggest');
-      const q = (SUP_CTX.name || '').toLowerCase();
-      // 'in' 방향이면 출처매장 직원 list 사용, 'out' 방향이면 자기 매장 직원 list
-      let pool = [];
-      if (SUP_CTX.direction === 'in' && SUP_CTX.other_store) {
-        pool = STATE.all_stores[SUP_CTX.other_store] || [];
-        pool = pool.map(e => ({ name: e.n, grade: e.g, id: e.i }));
-      } else if (SUP_CTX.direction === 'out') {
-        pool = STATE.employees.filter(e => !e.isNew).map(e => ({
-          name: e.name, grade: e.grade, id: e.id
-        }));
+      const sel = document.getElementById('sup-emp');
+      const pool = supPool();
+      SUP_CTX.name = ''; SUP_CTX.emp_id = null;
+      document.getElementById('sup-manual-area').style.display = 'none';
+      document.getElementById('sup-name').value = '';
+      if (!SUP_CTX.direction) {
+        sel.innerHTML = '<option value="">먼저 방향을 선택해주세요</option>';
+        return;
       }
-      const filtered = q ? pool.filter(e => e.name.toLowerCase().includes(q)) : pool;
-      if (!filtered.length) { box.style.display = 'none'; return; }
-      box.innerHTML = filtered.slice(0, 8).map(e => `
-        <div class="item" onclick="supPickName('${e.name.replace(/'/g, "\\'")}','${e.grade}')">
-          <span>${e.name}</span>
-          <span class="gr emp-grade ${e.grade}">${e.grade}</span>
-        </div>
-      `).join('');
-      box.style.display = 'block';
+      if (SUP_CTX.direction === 'in' && !SUP_CTX.other_store) {
+        sel.innerHTML = '<option value="">먼저 매장을 선택해주세요</option>';
+        return;
+      }
+      // 이름 오름차순 — 명단에서 눈으로 찾는 순서
+      pool.sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+      sel.innerHTML = '<option value="">직원 선택</option>'
+        + pool.map(e => `<option value="${e.id}">${e.name} (${e.grade})</option>`).join('')
+        + '<option value="__manual__">— 목록에 없어요 (직접 입력)</option>';
+    }
+
+    function supPickEmp(empId) {
+      if (empId === '__manual__') {
+        document.getElementById('sup-manual-area').style.display = 'block';
+        SUP_CTX.emp_id = null; SUP_CTX.name = '';
+        document.getElementById('sup-name').focus();
+        return;
+      }
+      document.getElementById('sup-manual-area').style.display = 'none';
+      document.getElementById('sup-name').value = '';
+      const hit = supPool().find(e => String(e.id) === String(empId));
+      if (!hit) { SUP_CTX.emp_id = null; SUP_CTX.name = ''; return; }
+      SUP_CTX.emp_id = hit.id;
+      supPickName(hit.name, hit.grade);
     }
 
     function supPickName(name, grade) {
       SUP_CTX.name = name;
       SUP_CTX.grade = grade;
-      document.getElementById('sup-name').value = name;
-      document.getElementById('sup-suggest').style.display = 'none';
       // 직급 chip 강조
       const gp = document.getElementById('sup-grades');
       gp.querySelectorAll('.grade-chip').forEach(c => {
@@ -1698,6 +1735,9 @@
         direction: SUP_CTX.direction,
         other_store: SUP_CTX.other_store,
         name: SUP_CTX.name,
+        // 목록에서 고른 경우에만 있다 — 서버가 이름으로 사람을 다시 찾지 않아도 된다
+        // (동명이인에서 추측하던 경로가 사라진다). '목록에 없어요' 면 null.
+        employee_id: SUP_CTX.emp_id || null,
         grade: SUP_CTX.grade,
         half_day: SUP_CTX.grade !== 'Crew' ? !!SUP_CTX.half : false,
         in: SUP_CTX.in,
