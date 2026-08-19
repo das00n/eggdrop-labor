@@ -557,6 +557,20 @@
       font-size: 12.5px; line-height: 1.5;
     }
     .hol-label { display: block; font-size: 12px; color: var(--hint); margin-bottom: 4px; }
+    /* 🏢 본사 근무 (슈퍼바이징·푸드트럭) */
+    .hq-label { display: block; font-size: 12px; color: var(--hint); margin: 12px 0 4px; }
+    .hq-select, .hq-time {
+      padding: 10px; border-radius: 8px; font-size: 15px; font-family: inherit;
+      border: 1px solid rgba(127,127,127,0.35); background: var(--section-bg); color: var(--text);
+    }
+    .hq-select { width: 100%; box-sizing: border-box; }
+    .hq-times { display: flex; align-items: center; gap: 8px; }
+    .hq-times .hq-time { flex: 1; text-align: center; }
+    .hq-hint { font-size: 11.5px; color: var(--hint); margin-top: 4px; }
+    .hq-note {
+      margin: 4px 0 0; padding: 8px 10px; border-radius: 8px;
+      background: rgba(0,122,255,0.10); color: var(--text); font-size: 12px; line-height: 1.5;
+    }
     .hol-note {
       width: 100%; box-sizing: border-box; padding: 10px; border-radius: 8px;
       border: 1px solid rgba(127,127,127,0.35); background: var(--section-bg);
@@ -718,9 +732,21 @@
         <option value="">매장 선택</option>
       </select>
 
-      <div class="modal-section-title">직원 이름</div>
-      <input class="form-input" id="sup-name" type="text" placeholder="이름 입력" autocomplete="off" oninput="supOnNameInput()">
-      <div class="sup-name-suggest" id="sup-suggest" style="display:none"></div>
+      <!-- 이름을 직접 치면 오타·미등록 이름이 그대로 통과하고, 서버는 이름으로 사람을
+           다시 찾다가 동명이인에서 추측하게 된다(2026-08 김세은). 등록된 직원 중에서만
+           고르게 하고 employee_id 를 함께 보낸다 — 이름 매칭 자체가 사라진다. -->
+      <div class="modal-section-title">직원</div>
+      <select class="form-input" id="sup-emp" onchange="supPickEmp(this.value)">
+        <option value="">먼저 매장을 선택해주세요</option>
+      </select>
+      <div id="sup-manual-area" style="display:none">
+        <input class="form-input" id="sup-name" type="text" placeholder="이름 입력"
+               autocomplete="off" oninput="supOnNameInput()" style="margin-top:8px">
+        <p class="modal-sub" style="margin-top:6px;color:var(--warn,#c47f17)">
+          ⚠️ 목록에 없는 분입니다. 그 매장에 아직 등록되지 않았을 수 있어요 —
+          이름이 정확한지 확인해주세요. (그 매장에서 먼저 직원 등록을 하는 편이 정확합니다)
+        </p>
+      </div>
 
       <div class="modal-section-title">직급</div>
       <div class="grade-picker" id="sup-grades"></div>
@@ -752,6 +778,39 @@
 
       <div class="modal-actions">
         <button class="modal-btn secondary" onclick="closeDateModal()">취소</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ───────── 🏢 본사 근무 (슈퍼바이징 · 푸드트럭) ───────── -->
+  <div class="modal-backdrop" id="hq-modal">
+    <div class="modal">
+      <h2 class="modal-title">🏢 본사 근무 추가</h2>
+      <p class="modal-sub">이 시간은 매장 인건비에서 빠져 본사로 넘어갑니다</p>
+
+      <label class="hq-label">직원</label>
+      <select id="hq-emp" class="hq-select" onchange="hqSetEmp(this.value)"></select>
+      <div class="hq-hint" id="hq-range"></div>
+
+      <label class="hq-label">종류</label>
+      <div class="half-row" id="hq-kinds"></div>
+
+      <label class="hq-label">시간</label>
+      <div class="hq-times">
+        <input type="time" id="hq-from" class="hq-time">
+        <span class="wk-tilde">~</span>
+        <input type="time" id="hq-to" class="hq-time">
+      </div>
+
+      <div id="hq-note-row" style="display:none">
+        <label class="hq-label">사유 (급여 지급 근거로 남습니다)</label>
+        <textarea id="hq-note" class="hol-note" rows="2"
+                  placeholder="예) 본사 교육 참석 · 신규 매장 오픈 지원"></textarea>
+      </div>
+
+      <div class="modal-actions">
+        <button class="modal-btn secondary" onclick="closeHqModal()">취소</button>
+        <button class="modal-btn" onclick="confirmHq()">추가</button>
       </div>
     </div>
   </div>
@@ -930,6 +989,10 @@
       // 같은 사람이 같은 날 두 매장에 유급 기록으로 남으면 가산 수당 산정이 틀어진다(2026-08 사고).
       // 연장·야간은 사람·날짜 합산 시간으로 판정하고, 정직원 고정일급은 그날 행들에 배분되기 때문.
       other_store_work_by_date: {},
+      // 🏢 본사 근무 구간 — 슈퍼바이징·푸드트럭 (docs/design/hq-attributed-hours.md).
+      //   그 시간은 매장 인건비가 아니라 본사 인건비로 넘어간다. 급여는 그대로다.
+      hqSegments: [],            // 지금 보고 있는 날짜 것 [{id, name, from, to, kind, note}]
+      hq_by_date: {},            // {날짜: [구간]} — 저장된 것 (없으면 저장 시 그날 것이 지워진다)
     };
 
     // 출/퇴근 picker 임시 상태
@@ -1108,6 +1171,8 @@
       if (Array.isArray(STATE.prev_support_entries)) {
         STATE.supportEntries = STATE.prev_support_entries.slice();
       }
+      // 🏢 저장된 본사 근무 구간 — 불러오지 않으면 저장 시 그날 것이 지워진다(wipe-insert)
+      STATE.hqSegments = ((STATE.hq_by_date || {})[STATE.date] || []).map((s) => ({ ...s }));
 
       renderMain();
       updateSummary();
@@ -1249,6 +1314,9 @@
       // 🔄 지원 섹션
       main.appendChild(renderSupportSection());
 
+      // 🏢 본사 근무 섹션 (슈퍼바이징·푸드트럭)
+      main.appendChild(renderHqSection());
+
       // 직원 추가 — 지원 섹션과 명확히 구분 (별도 섹션 + 구분선 + 안내)
       const addSec = document.createElement('div');
       addSec.className = 'add-employee-section';
@@ -1260,6 +1328,194 @@
       addBtn.onclick = openAddModal;
       addSec.appendChild(addBtn);
       main.appendChild(addSec);
+    }
+
+    // ───────── 🏢 본사 근무 (슈퍼바이징 · 푸드트럭) ─────────
+    //   그 시간은 매장 인건비에서 빠져 본사로 넘어간다. 급여(개인 지급액)는 그대로.
+    //   판정 규칙은 봇 src/offsite.py 와 **같아야 한다** — 화면에서 통과한 것이 서버에서
+    //   걸리면 매니저는 이유를 모른다.
+    const HQ_MAX_PER_PERSON = 3;
+    const HQ_KINDS = [['supervising', '슈퍼바이징'], ['foodtruck', '푸드트럭'], ['other', '기타']];
+    const hqKindLabel = (k) => (HQ_KINDS.find((x) => x[0] === k) || [k, k])[1];
+
+    function hqMin(t) {              // 'HH:MM' → 분 (봇 offsite.to_min)
+      const m = /^(\d{1,2}):(\d{2})$/.exec(String(t || '').trim());
+      if (!m) return null;
+      const h = +m[1], mi = +m[2];
+      if (h > 24 || mi > 59) return null;
+      return h * 60 + mi;
+    }
+    function hqShiftWin(ent) {       // 근무 창 [출근, 퇴근] · 자정 넘김은 +24h
+      const a = hqMin(ent && ent.in), b0 = hqMin(ent && ent.out);
+      if (a === null || b0 === null) return null;
+      return [a, b0 <= a ? b0 + 1440 : b0];
+    }
+    function hqNorm(frm, to, win) {  // 구간을 창 기준으로 (봇 offsite._norm_segment)
+      let a = hqMin(frm), b = hqMin(to);
+      if (a === null || b === null) return null;
+      if (b < a) b += 1440;
+      if (win[1] > 1440 && a < win[0]) { a += 1440; b += 1440; }
+      // 창으로 오려낸다 — 이 줄이 없으면 출근 전·퇴근 후 구간이 그대로 통과한다
+      // (hqValidate 가 '오려낸 길이 < 원래 길이' 로 범위 밖을 잡아내므로 필수).
+      a = Math.max(a, win[0]);
+      b = Math.min(b, win[1]);
+      return b > a ? [a, b] : null;
+    }
+    const hqOverlap = (x, y) => Math.max(0, Math.min(x[1], y[1]) - Math.max(y[0], x[0]));
+
+    // 그 사람 그날 본사 시간(분) — 휴게 겹침 제외. 요약 표시용.
+    function hqMinutesFor(empId) {
+      const ent = STATE.entries[empId];
+      const win = hqShiftWin(ent);
+      if (!win) return 0;
+      const brk = (ent.break_start && ent.break_end) ? hqNorm(ent.break_start, ent.break_end, win) : null;
+      let total = 0;
+      (STATE.hqSegments || []).filter((s) => s.id === empId).forEach((s) => {
+        const cut = hqNorm(s.from, s.to, win);
+        if (!cut) return;
+        total += (cut[1] - cut[0]) - (brk ? hqOverlap(cut, brk) : 0);
+      });
+      return Math.max(0, total);
+    }
+    const hqTotalMinutes = () =>
+      STATE.employees.reduce((a, e) => a + hqMinutesFor(e.id), 0);
+
+    /** 구간 하나를 추가할 수 있는지 — 통과하면 null, 아니면 사유 문구. */
+    function hqValidate(empId, frm, to, kind, note, skipIdx) {
+      const ent = STATE.entries[empId];
+      if (!ent || !ent.on || !ent.in || !ent.out) return '그 직원은 이 날 근무(출퇴근) 기록이 없습니다.';
+      if (!HQ_KINDS.some((x) => x[0] === kind)) return '종류를 선택해주세요.';
+      const win = hqShiftWin(ent);
+      if (!win) return '출퇴근 시간을 먼저 입력해주세요.';
+      const a = hqMin(frm), b = hqMin(to);
+      if (a === null || b === null) return '시각을 선택해주세요.';
+      const raw = hqNorm(frm, to, [0, 2880]);
+      if (!raw) return '종료 시각이 시작보다 늦어야 합니다.';
+      const cut = hqNorm(frm, to, win);
+      if (!cut) return `출근~퇴근(${ent.in}~${ent.out}) 범위 안이어야 합니다.`;
+      if (cut[1] - cut[0] < raw[1] - raw[0]) return `출근~퇴근(${ent.in}~${ent.out}) 범위를 벗어났습니다.`;
+      if (kind === 'other' && !isAdequateHolReason(note)) {
+        return '종류가 \'기타\'면 사유를 적어주세요. (예: 본사 교육 참석)';
+      }
+      const mine = (STATE.hqSegments || [])
+        .map((s, i) => ({ s, i })).filter((x) => x.s.id === empId && x.i !== skipIdx);
+      if (mine.length >= HQ_MAX_PER_PERSON) {
+        return `한 사람 하루 최대 ${HQ_MAX_PER_PERSON}개까지입니다.`;
+      }
+      for (const { s } of mine) {
+        const o = hqNorm(s.from, s.to, win);
+        if (o && hqOverlap(cut, o) > 0) return `이미 등록한 ${s.from}~${s.to} 와 겹칩니다.`;
+      }
+      return null;
+    }
+
+    function renderHqSection() {
+      const sec = document.createElement('div');
+      sec.className = 'section';
+      sec.id = 'hq-section';
+      const n = (STATE.hqSegments || []).length;
+      sec.innerHTML = `<div class="section-title">
+        <span>🏢 본사 근무 (슈퍼바이징 · 푸드트럭)</span>
+        <span class="section-count">${n}건</span>
+      </div>
+      <div class="hq-note">이 시간은 <b>매장 인건비에서 빠져 본사로</b> 넘어갑니다. 급여는 그대로예요.</div>`;
+      const list = document.createElement('div');
+      list.className = 'emp-list';
+      (STATE.hqSegments || []).forEach((s, idx) => {
+        const r = document.createElement('div');
+        r.className = 'support-row dir-out';
+        const mins = (() => { const w = hqShiftWin(STATE.entries[s.id]);
+          const c = w && hqNorm(s.from, s.to, w); return c ? (c[1] - c[0]) / 60 : 0; })();
+        r.innerHTML = `
+          <span class="support-tag out">🏢 본사</span>
+          <div class="support-info">
+            <div class="name">${s.name}</div>
+            <div class="meta">${hqKindLabel(s.kind)} · ${s.from}~${s.to} (${mins.toFixed(1)}h)${s.note ? ` · ${s.note}` : ''}</div>
+          </div>
+          <button class="support-delete" onclick="removeHq(${idx})">삭제</button>
+        `;
+        list.appendChild(r);
+      });
+      const addBtn = document.createElement('div');
+      addBtn.className = 'add-btn';
+      addBtn.style.margin = '8px 0 0';
+      addBtn.textContent = '+ 본사 근무 추가';
+      addBtn.onclick = () => openHqModal();
+      sec.appendChild(list);
+      sec.appendChild(addBtn);
+      return sec;
+    }
+
+    function removeHq(idx) {
+      STATE.hqSegments.splice(idx, 1);
+      renderMain();
+      updateSummary();
+    }
+
+    // ───────── 본사 근무 modal ─────────
+    let HQ_CTX = { id: null, from: '09:00', to: '18:00', kind: 'supervising' };
+
+    function openHqModal() {
+      const cands = STATE.employees.filter((e) => {
+        const t = STATE.entries[e.id];
+        return t && t.on && t.in && t.out;
+      });
+      if (!cands.length) {
+        say('본사 근무를 넣을 직원이 없습니다.\n먼저 그 직원의 출근/퇴근 시간을 입력해주세요.');
+        return;
+      }
+      HQ_CTX = { id: cands[0].id, from: null, to: null, kind: 'supervising' };
+      renderHqModal();
+      document.getElementById('hq-modal').classList.add('show');
+    }
+    function closeHqModal() { document.getElementById('hq-modal').classList.remove('show'); }
+
+    function renderHqModal() {
+      const cands = STATE.employees.filter((e) => {
+        const t = STATE.entries[e.id];
+        return t && t.on && t.in && t.out;
+      });
+      if (!cands.some((e) => e.id === HQ_CTX.id)) HQ_CTX.id = cands[0] && cands[0].id;
+      const ent = STATE.entries[HQ_CTX.id] || {};
+      // 시각 기본값은 그 사람 출퇴근 — 범위 밖을 고를 일이 줄어든다
+      if (!HQ_CTX.from) HQ_CTX.from = ent.in || '09:00';
+      if (!HQ_CTX.to) HQ_CTX.to = ent.out || '18:00';
+      document.getElementById('hq-emp').innerHTML = cands
+        .map((e) => `<option value="${e.id}"${e.id === HQ_CTX.id ? ' selected' : ''}>${e.name} (${e.grade}) ${STATE.entries[e.id].in}~${STATE.entries[e.id].out}</option>`)
+        .join('');
+      document.getElementById('hq-kinds').innerHTML = HQ_KINDS
+        .map(([k, label]) => `<div class="half-chip${HQ_CTX.kind === k ? ' active' : ''}" onclick="hqSetKind('${k}')">${label}</div>`)
+        .join('');
+      // 시각은 네이티브 time 입력을 쓴다 — 기존 출퇴근 피커(TM_CTX)를 건드리지 않아
+      // 하루 입력·주간 입력 흐름에 영향이 없다.
+      document.getElementById('hq-from').value = HQ_CTX.from;
+      document.getElementById('hq-to').value = HQ_CTX.to;
+      document.getElementById('hq-note-row').style.display = HQ_CTX.kind === 'other' ? '' : 'none';
+      document.getElementById('hq-range').textContent =
+        ent.in ? `그 직원 근무: ${ent.in} ~ ${ent.out}` : '';
+    }
+    function hqSetEmp(id) { HQ_CTX.id = id; HQ_CTX.from = null; HQ_CTX.to = null; renderHqModal(); }
+    function hqSetKind(k) {
+      HQ_CTX.kind = k;
+      HQ_CTX.from = document.getElementById('hq-from').value || HQ_CTX.from;
+      HQ_CTX.to = document.getElementById('hq-to').value || HQ_CTX.to;
+      renderHqModal();
+    }
+
+    function confirmHq() {
+      const note = (document.getElementById('hq-note').value || '').trim();
+      HQ_CTX.from = document.getElementById('hq-from').value;
+      HQ_CTX.to = document.getElementById('hq-to').value;
+      const emp = STATE.employees.find((e) => e.id === HQ_CTX.id);
+      const err = hqValidate(HQ_CTX.id, HQ_CTX.from, HQ_CTX.to, HQ_CTX.kind, note, -1);
+      if (err) { say(err); return; }
+      STATE.hqSegments.push({ id: HQ_CTX.id, name: emp ? emp.name : '',
+                             from: HQ_CTX.from, to: HQ_CTX.to,
+                             kind: HQ_CTX.kind, note: HQ_CTX.kind === 'other' ? note : null });
+      closeHqModal();
+      renderMain();
+      updateSummary();
+      scrollToEl('hq-section');
     }
 
     function renderSupportSection() {
@@ -1303,11 +1559,12 @@
     let SUP_CTX = null;  // {direction, other_store, name, grade, in, out, breakH, break_start, break_end, hours}
 
     function openSupportModal() {
-      SUP_CTX = { direction: null, other_store: '', name: '', grade: null,
+      SUP_CTX = { direction: null, other_store: '', name: '', emp_id: null, grade: null,
                   in: null, out: null, breakH: 0, break_start: null, break_end: null, hours: 0, half: false };
       document.getElementById('sup-name').value = '';
       document.getElementById('sup-info').textContent = '';
-      document.getElementById('sup-suggest').style.display = 'none';
+      document.getElementById('sup-manual-area').style.display = 'none';
+      document.getElementById('sup-emp').innerHTML = '<option value="">먼저 방향을 선택해주세요</option>';
       document.querySelectorAll('.sup-dir-chip').forEach(c => c.classList.remove('selected'));
 
       // 매장 드롭다운 (자기 매장 제외)
@@ -1360,40 +1617,64 @@
     }
 
     function supOnNameInput() {
-      const v = document.getElementById('sup-name').value.trim();
-      SUP_CTX.name = v;
-      supRefreshSuggest();
+      // '목록에 없어요' 를 고른 뒤에만 쓰인다 — id 없이 이름만 간다(서버가 이름으로 찾는다)
+      SUP_CTX.name = document.getElementById('sup-name').value.trim();
+      SUP_CTX.emp_id = null;
+    }
+
+    /** 지원 대상 후보 — 'in' 이면 출처매장 직원, 'out' 이면 우리 매장 직원. */
+    function supPool() {
+      if (SUP_CTX.direction === 'in' && SUP_CTX.other_store) {
+        return (STATE.all_stores[SUP_CTX.other_store] || [])
+          .map(e => ({ name: e.n, grade: e.g, id: e.i }));
+      }
+      if (SUP_CTX.direction === 'out') {
+        // 아직 저장 전인 신규 직원은 id 가 없어 지원 대상이 될 수 없다
+        return STATE.employees.filter(e => !e.isNew)
+          .map(e => ({ name: e.name, grade: e.grade, id: e.id }));
+      }
+      return [];
     }
 
     function supRefreshSuggest() {
-      const box = document.getElementById('sup-suggest');
-      const q = (SUP_CTX.name || '').toLowerCase();
-      // 'in' 방향이면 출처매장 직원 list 사용, 'out' 방향이면 자기 매장 직원 list
-      let pool = [];
-      if (SUP_CTX.direction === 'in' && SUP_CTX.other_store) {
-        pool = STATE.all_stores[SUP_CTX.other_store] || [];
-        pool = pool.map(e => ({ name: e.n, grade: e.g, id: e.i }));
-      } else if (SUP_CTX.direction === 'out') {
-        pool = STATE.employees.filter(e => !e.isNew).map(e => ({
-          name: e.name, grade: e.grade, id: e.id
-        }));
+      const sel = document.getElementById('sup-emp');
+      const pool = supPool();
+      SUP_CTX.name = ''; SUP_CTX.emp_id = null;
+      document.getElementById('sup-manual-area').style.display = 'none';
+      document.getElementById('sup-name').value = '';
+      if (!SUP_CTX.direction) {
+        sel.innerHTML = '<option value="">먼저 방향을 선택해주세요</option>';
+        return;
       }
-      const filtered = q ? pool.filter(e => e.name.toLowerCase().includes(q)) : pool;
-      if (!filtered.length) { box.style.display = 'none'; return; }
-      box.innerHTML = filtered.slice(0, 8).map(e => `
-        <div class="item" onclick="supPickName('${e.name.replace(/'/g, "\\'")}','${e.grade}')">
-          <span>${e.name}</span>
-          <span class="gr emp-grade ${e.grade}">${e.grade}</span>
-        </div>
-      `).join('');
-      box.style.display = 'block';
+      if (SUP_CTX.direction === 'in' && !SUP_CTX.other_store) {
+        sel.innerHTML = '<option value="">먼저 매장을 선택해주세요</option>';
+        return;
+      }
+      // 이름 오름차순 — 명단에서 눈으로 찾는 순서
+      pool.sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+      sel.innerHTML = '<option value="">직원 선택</option>'
+        + pool.map(e => `<option value="${e.id}">${e.name} (${e.grade})</option>`).join('')
+        + '<option value="__manual__">— 목록에 없어요 (직접 입력)</option>';
+    }
+
+    function supPickEmp(empId) {
+      if (empId === '__manual__') {
+        document.getElementById('sup-manual-area').style.display = 'block';
+        SUP_CTX.emp_id = null; SUP_CTX.name = '';
+        document.getElementById('sup-name').focus();
+        return;
+      }
+      document.getElementById('sup-manual-area').style.display = 'none';
+      document.getElementById('sup-name').value = '';
+      const hit = supPool().find(e => String(e.id) === String(empId));
+      if (!hit) { SUP_CTX.emp_id = null; SUP_CTX.name = ''; return; }
+      SUP_CTX.emp_id = hit.id;
+      supPickName(hit.name, hit.grade);
     }
 
     function supPickName(name, grade) {
       SUP_CTX.name = name;
       SUP_CTX.grade = grade;
-      document.getElementById('sup-name').value = name;
-      document.getElementById('sup-suggest').style.display = 'none';
       // 직급 chip 강조
       const gp = document.getElementById('sup-grades');
       gp.querySelectorAll('.grade-chip').forEach(c => {
@@ -1454,6 +1735,9 @@
         direction: SUP_CTX.direction,
         other_store: SUP_CTX.other_store,
         name: SUP_CTX.name,
+        // 목록에서 고른 경우에만 있다 — 서버가 이름으로 사람을 다시 찾지 않아도 된다
+        // (동명이인에서 추측하던 경로가 사라진다). '목록에 없어요' 면 null.
+        employee_id: SUP_CTX.emp_id || null,
         grade: SUP_CTX.grade,
         half_day: SUP_CTX.grade !== 'Crew' ? !!SUP_CTX.half : false,
         in: SUP_CTX.in,
@@ -1621,6 +1905,9 @@
       // 지원 entries 재구성
       const sup = (STATE.prev_support_by_date || {})[dateStr] || [];
       STATE.supportEntries = sup.slice();
+      // 🏢 본사 근무 구간도 그 날짜 것으로 갈아준다 — 안 하면 앞서 보던 날 것이 남아
+      // 엉뚱한 날에 저장된다(저장은 그 날짜 통째 교체다).
+      STATE.hqSegments = ((STATE.hq_by_date || {})[dateStr] || []).map((s) => ({ ...s }));
       // 시급 변경분 / 삭제 / 신규 직원은 진입 후 상태이므로 그대로 유지 (저장 시 함께 전송)
     }
 
@@ -1932,7 +2219,10 @@
         sumEl.innerHTML = `<span style="color:var(--destructive)">⚠️ ${incompleteCount}명 출퇴근 시간 누락</span>`;
         if (btn) { btn.disabled = true; btn.textContent = '⚠️ 시간 입력 필요'; }
       } else {
-        sumEl.textContent = `${count}명 · ${totalH.toFixed(1)}h 근무`;
+        // 본사 근무가 있으면 매장/본사로 나눠 보여준다 — 매장 인건비가 얼마나 빠지는지 바로 보이게
+        const hqH = hqTotalMinutes() / 60;
+        sumEl.textContent = `${count}명 · ${totalH.toFixed(1)}h 근무`
+          + (hqH > 0 ? ` (매장 ${(totalH - hqH).toFixed(1)}h · 🏢 본사 ${hqH.toFixed(1)}h)` : '');
         if (btn) { btn.disabled = false; btn.textContent = '💾 저장'; }
       }
       applyReadonly();   // 조회 전용 날짜면 위에서 켠 저장 버튼을 다시 잠근다
@@ -2498,6 +2788,10 @@
         deleted_employee_info: { ...STATE.deletedInfo },
         entries: [],
         support_entries: STATE.supportEntries.slice(),     // [{direction, other_store, name, grade, hours, mode}]
+        // 🏢 본사 근무 구간 — 그 날짜 통째 교체. 키가 **있어야** 서버가 이 날짜를 갱신한다
+        //   (키가 없으면 서버는 기존 구간을 보존한다 — 옛 화면 대비).
+        hq_segments: (STATE.hqSegments || []).map((s) => ({
+          id: s.id, name: s.name, from: s.from, to: s.to, kind: s.kind, note: s.note || null })),
         // Crew 시급은 개인별 — 신규는 base_rate, 기존 변경은 entries.base_rate로 전달
         // 기존 직원 정보 보완(전화번호·생년월일) — 사람 식별 자연키
         employee_info: (STATE.employeeInfo || []).slice(),
