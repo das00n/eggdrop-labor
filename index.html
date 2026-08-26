@@ -651,6 +651,8 @@
       ⚠️ 실제 근무시간이 스케줄과 다르면 <b>퇴근 전에 반드시 수정</b>해 주세요. (인건비·담당 매출이 이 기록으로 계산됩니다)
     </div>
     <div class="summary-amount" id="sum-amount">0명 · 0h 근무</div>
+    <!-- 예상 인건비율 — 상·하한을 벗어날 때만 뜬다(정상이면 조용) -->
+    <div id="labor-ratio" style="display:none;font-size:11.5px;line-height:1.45;margin-bottom:6px"></div>
     <button class="save-btn" id="save-btn" onclick="onSave()" disabled>💾 저장</button>
   </footer>
 
@@ -989,6 +991,7 @@
       // 같은 사람이 같은 날 두 매장에 유급 기록으로 남으면 가산 수당 산정이 틀어진다(2026-08 사고).
       // 연장·야간은 사람·날짜 합산 시간으로 판정하고, 정직원 고정일급은 그날 행들에 배분되기 때문.
       other_store_work_by_date: {},
+      forecast_ref: {},           // {by_date:{날짜:[기준매출, 저장된 인건비]}, high, low} — 예상 인건비율
       // 🏢 본사 근무 구간 — 슈퍼바이징·푸드트럭 (docs/design/hq-attributed-hours.md).
       //   그 시간은 매장 인건비가 아니라 본사 인건비로 넘어간다. 급여는 그대로다.
       hqSegments: [],            // 지금 보고 있는 날짜 것 [{id, name, from, to, kind, note}]
@@ -2042,6 +2045,82 @@
       return hits.sort((a, b) => b.hours - a.hours);
     }
 
+    // ───────── 예상 인건비율 ─────────
+    //   전주 같은 요일 매출을 자로 써서 "이대로 가면 인건비율이 얼마인가"를 보여준다.
+    //   공휴일 보정(공휴일 = 주말과 같은 부류)은 **서버에서 이미 끝났다** — 여기 담긴
+    //   기준매출이 보정된 값이다. 규칙이 두 곳에 있으면 화면과 봇이 다른 숫자를 말한다.
+    //
+    //   금액은 보여주지 않는다(미니앱 정책 — 인원·시간만). 비율만 보여준다.
+
+    /** 그 달 소정근로일수 = 평일(월~금) 수. 봇 labor_prorate.workdays_in_month 와 같은 규칙. */
+    function monthWeekdays(dateStr) {
+      const y = +dateStr.slice(0, 4), m = +dateStr.slice(5, 7);
+      const last = new Date(y, m, 0).getDate();
+      let n = 0;
+      for (let d = 1; d <= last; d++) {
+        const w = new Date(y, m - 1, d).getDay();
+        if (w >= 1 && w <= 5) n++;
+      }
+      return n;
+    }
+
+    /** 이 날짜 입력분의 예상 인건비 — 정직원 고정일급 + 크루 시간×시급.
+     *  연장·야간·공휴 가산은 빼고 본다(봇이 최종 계산한다) — 그래서 '예상'이다. */
+    function estDayLabor(entryOf, dateStr) {
+      const md = monthWeekdays(dateStr);
+      let sum = 0;
+      for (const emp of STATE.employees) {
+        if (STATE.deletedEmployees.includes(emp.id)) continue;
+        const e = entryOf(emp.id);
+        if (!(e && e.on && e.in && e.out)) continue;
+        const h = calcWork(e.in, e.out, e.breakH || 0);
+        if (!(h > 0)) continue;
+        const factor = e.half ? 0.5 : 1;
+        if (emp.full_time) {
+          const std = (STATE.support_daily_hours || {})[emp.grade];
+          if (!std) continue;
+          let day = Math.round((emp.rate_amount || 0) * std);
+          if (md) day = Math.round(day * 21.7262 / md);   // 그 달 소정근로일수 기준
+          sum += Math.round(day * factor);
+        } else {
+          sum += Math.round(h * (emp.rate_amount || 0) * factor);
+        }
+      }
+      return sum;
+    }
+
+    /** 그 주 예상 인건비율 — {ratio, days} 또는 null(잴 근거 없음).
+     *  overrides = {날짜: 인건비} 로 지금 편집 중인 날을 덮는다. */
+    function weekLaborRatio(weekStart, overrides) {
+      const ref = STATE.forecast_ref?.by_date;
+      if (!ref) return null;
+      let labor = 0, sales = 0, days = 0;
+      for (let i = 0; i < 7; i++) {
+        const d = addDays(weekStart, i);
+        const r = ref[d];
+        if (!r || !(r[0] > 0)) continue;                 // 기준 매출이 없는 날은 못 잰다
+        const amt = (overrides && Object.prototype.hasOwnProperty.call(overrides, d))
+          ? Number(overrides[d] || 0) : Number(r[1] || 0);
+        if (!(amt > 0)) continue;                        // 아직 안 짠 날은 분모에도 안 넣는다
+        labor += amt; sales += r[0]; days++;
+      }
+      return sales > 0 ? { ratio: labor / sales, days } : null;
+    }
+
+    /** 화면에 띄울 한 줄 — {text, level}. 정상이면 level 'ok'. */
+    function laborRatioLine(weekStart, overrides) {
+      const fc = weekLaborRatio(weekStart, overrides);
+      if (!fc) return null;
+      const hi = STATE.forecast_ref?.high ?? 0.25;
+      const lo = STATE.forecast_ref?.low ?? 0.15;
+      const pct = fc.ratio * 100;
+      const level = fc.ratio > hi ? 'high' : fc.ratio < lo ? 'low' : 'ok';
+      let text = `예상 인건비율 ${pct.toFixed(1)}% (입력 ${fc.days}일 · 지난주 같은 요일 매출 기준)`;
+      if (level === 'high') text += ` — 목표 ${(hi * 100).toFixed(0)}%를 넘습니다. 스케줄이 맞는지 확인해주세요`;
+      else if (level === 'low') text += ` — ${(lo * 100).toFixed(0)}%보다 낮습니다. 인원이 부족하지 않은지 확인해주세요`;
+      return { text, level };
+    }
+
     /** 막을 때 보여줄 문구 — 왜 막혔는지와 무엇을 하면 되는지가 전부 들어가야 한다.
      *  이유를 안 적으면 매니저는 같은 값을 또 넣는다. */
     function weekLimitMessage(hits) {
@@ -2302,7 +2381,21 @@
           + (hqH > 0 ? ` (매장 ${(totalH - hqH).toFixed(1)}h · 🏢 본사 ${hqH.toFixed(1)}h)` : '');
         if (btn) { btn.disabled = false; btn.textContent = '💾 저장'; }
       }
+      renderLaborRatio();
       applyReadonly();   // 조회 전용 날짜면 위에서 켠 저장 버튼을 다시 잠근다
+    }
+
+    /** 하루 입력 화면의 예상 인건비율 배너 — 지금 입력분을 반영해 그 주를 다시 잰다.
+     *  저장 전에 보여야 의미가 있다. 저장하고 나서 알면 또 열어야 한다. */
+    function renderLaborRatio() {
+      const el = document.getElementById('labor-ratio');
+      if (!el) return;
+      const line = laborRatioLine(weekStartOf(STATE.date),
+        { [STATE.date]: estDayLabor((id) => STATE.entries[id], STATE.date) });
+      if (!line || line.level === 'ok') { el.style.display = 'none'; el.textContent = ''; return; }
+      el.style.display = '';
+      el.style.color = line.level === 'high' ? '#e11d48' : '#b45309';
+      el.textContent = (line.level === 'high' ? '📊 ' : '📉 ') + line.text;
     }
 
     // ───────── 토글 ─────────
@@ -3075,6 +3168,17 @@
              + (over ? ` — <b>${Math.round((wh - WEEK_LIMIT) * 10) / 10}h 초과, 이대로는 저장할 수 없습니다</b>`
                      : near ? ' — 상한에 근접했습니다' : '')
              + `</div>`;
+        }
+      }
+
+      // 예상 인건비율 — 이 주 전체(편집 중인 날 포함). 직원 한 명이 아니라 매장 단위다.
+      {
+        const ov = {};
+        ds.forEach(d => { ov[d] = estDayLabor((id) => wkEntry(d, id), d); });
+        const line = laborRatioLine(ds[0], ov);
+        if (line && line.level !== 'ok') {
+          h += `<div class="av-note" style="color:${line.level === 'high' ? '#e11d48' : '#b45309'}">`
+             + (line.level === 'high' ? '📊 ' : '📉 ') + line.text + `</div>`;
         }
       }
       ds.forEach((d, i) => {
