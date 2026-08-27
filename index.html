@@ -480,12 +480,14 @@
     .lr-day.hit { background: var(--lr); color: #fff; border-color: var(--lr); }
     .lr-day.none { opacity: 0.55; }
 
-    /* 주간 입력 요일 행 끝의 그날 비율 — 어느 날을 줄여야 하는지 바로 보이게 */
+    /* 그날 비율 배지 — 어느 날을 줄여야 하는지 바로 보이게 */
     .wk-rate { margin-left: auto; font-size: 11.5px; font-weight: 800; padding: 2px 6px;
                border-radius: 7px; font-variant-numeric: tabular-nums; flex-shrink: 0;
                background: rgba(127,127,127,0.12); color: var(--hint); }
     .wk-rate.high { background: rgba(225,29,72,0.14); color: #e11d48; }
     .wk-rate.low  { background: rgba(180,83,9,0.16); color: #b45309; }
+    /* 주간표 날짜 머리행 안에서는 표 셀 안이라 flex 배치가 아니다 */
+    .wk th .wk-rate { display: inline-block; margin: 3px 0 0; font-size: 10px; padding: 1px 5px; }
     .wk-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
     table.wk { border-collapse: collapse; font-size: 11px; font-variant-numeric: tabular-nums; width: 100%; }
     .wk th, .wk td { border: 1px solid rgba(127,127,127,0.25); padding: 4px 3px; text-align: center; white-space: nowrap; }
@@ -678,8 +680,9 @@
       ⚠️ 실제 근무시간이 스케줄과 다르면 <b>퇴근 전에 반드시 수정</b>해 주세요. (인건비·담당 매출이 이 기록으로 계산됩니다)
     </div>
     <div class="summary-amount" id="sum-amount">0명 · 0h 근무</div>
-    <!-- 예상 인건비율 — 상·하한을 벗어날 때만 뜬다(정상이면 조용) -->
-    <div id="labor-ratio" style="display:none;font-size:11.5px;line-height:1.45;margin-bottom:6px"></div>
+    <!-- 예상 인건비율은 여기 두지 않는다 — 고정 푸터라 입력하는 내내 화면을 차지해
+         직원 목록이 밀린다(2026-08 신논현역점). 저장을 누를 때 확인 모달로 한 번 보여준다.
+         지금 짜는 중인 상태를 계속 보고 싶으면 📆 주간표 탭에 있다. -->
     <button class="save-btn" id="save-btn" onclick="onSave()" disabled>💾 저장</button>
   </footer>
 
@@ -943,12 +946,16 @@
       <h2 class="modal-title" id="lrm-title">📊 예상 인건비율 확인</h2>
       <div id="lrm-body"></div>
       <p class="modal-sub" style="margin-top:10px">
-        지난주 같은 요일 매출을 기준으로 잡은 <b>추정</b>입니다.
-        이대로가 맞다면 그대로 저장하셔도 됩니다.
+        최근 같은 요일 매출을 기준으로 잡은 <b>추정</b>입니다.
+        이대로가 맞다면 그대로 저장하셔도 됩니다.<br>
+        <!-- '다시 볼게요'를 "알겠다"로 읽고 저장된 줄 안 사례가 있었다
+             (2026-08 신논현역점 — 저장이 안 된다는 문의로 돌아왔다).
+             어느 버튼이 저장인지 문구만으로 분명해야 한다. -->
+        <b>[저장하기]</b>를 눌러야 저장됩니다.
       </p>
       <div class="modal-actions">
-        <button class="modal-btn secondary" onclick="closeRatioModal()">다시 볼게요</button>
-        <button class="modal-btn primary" onclick="ratioConfirmSave()">확인했습니다 · 저장</button>
+        <button class="modal-btn secondary" onclick="closeRatioModal()">저장 안 함 · 수정할게요</button>
+        <button class="modal-btn primary" onclick="ratioConfirmSave()">확인했습니다 · 저장하기</button>
       </div>
     </div>
   </div>
@@ -2163,7 +2170,7 @@
       const lo = STATE.forecast_ref?.low ?? 0.15;
       const pct = fc.ratio * 100;
       const level = fc.ratio > hi ? 'high' : fc.ratio < lo ? 'low' : 'ok';
-      let text = `예상 인건비율 ${pct.toFixed(1)}% (입력 ${fc.days}일 · 지난주 같은 요일 매출 기준)`;
+      let text = `예상 인건비율 ${pct.toFixed(1)}% (입력 ${fc.days}일 · 최근 같은 요일 매출 기준)`;
       if (level === 'high') text += ` — 목표 ${(hi * 100).toFixed(0)}%를 넘습니다. 스케줄이 맞는지 확인해주세요`;
       else if (level === 'low') text += ` — ${(lo * 100).toFixed(0)}%보다 낮습니다. 인원이 부족하지 않은지 확인해주세요`;
       return { text, level };
@@ -2215,7 +2222,7 @@
           : '목표 범위 안입니다.';
       return `<div class="lr-card ${line.level}">`
         + `<div class="lr-top"><span class="lr-pct">${(fc.ratio * 100).toFixed(1)}%</span>`
-        + `<span class="lr-cap">예상 인건비율 · 입력 ${fc.days}일 · 지난주 같은 요일 매출 기준</span></div>`
+        + `<span class="lr-cap">예상 인건비율 · 입력 ${fc.days}일 · 최근 같은 요일 매출 기준</span></div>`
         + `<div class="lr-msg">${msg}</div>`
         + (days ? `<div class="lr-days">${days}</div>` : '')
         + `</div>`;
@@ -2481,18 +2488,7 @@
           + (hqH > 0 ? ` (매장 ${(totalH - hqH).toFixed(1)}h · 🏢 본사 ${hqH.toFixed(1)}h)` : '');
         if (btn) { btn.disabled = false; btn.textContent = '💾 저장'; }
       }
-      renderLaborRatio();
       applyReadonly();   // 조회 전용 날짜면 위에서 켠 저장 버튼을 다시 잠근다
-    }
-
-    /** 하루 입력 화면의 예상 인건비율 배너 — 지금 입력분을 반영해 그 주를 다시 잰다.
-     *  저장 전에 보여야 의미가 있다. 저장하고 나서 알면 또 열어야 한다. */
-    function renderLaborRatio() {
-      const el = document.getElementById('labor-ratio');
-      if (!el) return;
-      const html = laborRatioCard(weekStartOf(STATE.date), todayOverride());
-      el.innerHTML = html;
-      el.style.display = html ? '' : 'none';
     }
 
     /** 지금 화면의 입력값으로 본 오늘 인건비 — {날짜: 금액}. 저장 전 판정에 쓴다. */
@@ -3305,11 +3301,9 @@
         }
       }
 
-      // 예상 인건비율 — 이 주 전체(편집 중인 날 포함). 직원 한 명이 아니라 매장 단위다.
-      const wkOv = {};
-      ds.forEach(d => { wkOv[d] = estDayLabor((id) => wkEntry(d, id), d); });
-      h += laborRatioCard(ds[0], wkOv, { days: false });   // 요일 배지가 아래 행마다 있다
-      const dayRates = Object.fromEntries(weekDayRatios(ds[0], wkOv).map(x => [x.date, x]));
+      // 인건비율은 여기 두지 않는다 — 이 화면은 직원 한 명의 한 주다. 매장 전체 비율을
+      // 개인 화면에 붙이면 "이 사람 때문"으로 읽힌다. 매장 단위인 📆 주간표에서 본다.
+      // (저장 직전 확인 모달은 그대로 — 그때는 매장 전체가 어떻게 되는지가 판단 대상이다.)
       ds.forEach((d, i) => {
         const e = wkEntry(d, WK_EMP);
         const on = e.on && e.in && e.out;
@@ -3328,12 +3322,6 @@
              // 지정 공휴일은 전원 자동 — 날짜(wk-date)에 이미 표시했고 개별 토글은 숨긴다
              + (isOfficialHoliday(d) ? ''
                 : `<button type="button" class="wk-mini${e.hol ? ' on-hol' : ''}" onclick="wkToggleHol('${d}')" title="공휴일 근무">🎌공휴</button>`);
-          // 그날 인건비율 — 매장 전체 기준(이 직원만이 아니다). 줄일 날을 바로 찾게.
-          const dr = dayRates[d];
-          if (dr && dr.ratio !== null) {
-            h += `<span class="wk-rate ${dr.level}" title="그날 매장 전체 예상 인건비율">`
-               + `${(dr.ratio * 100).toFixed(0)}%</span>`;
-          }
         } else {
           h += `<button type="button" class="wk-mini${e.leave ? ' on-leave' : ''}" onclick="wkToggleLeave('${d}')" title="연차 사용">🏖연차</button>`;
         }
@@ -3504,10 +3492,40 @@
       let h = `<div class="av-nav"><button type="button" onclick="navWeek(-1)">‹</button><b>📆 주간표 ${label}</b><button type="button" onclick="navWeek(1)">›</button></div>`;
       h += `<div class="av-note">저장된 스케줄 기준 (오늘 날짜는 입력 중인 값 반영) · 최근 3개월 조회 가능${extras.size ? ' · ※ = 현재 명단 외(퇴사·이동)' : ''}${supRows.size ? ' · (지원) = 타 매장에서 지원' : ''}</div>`;
       const dayMaps = ds.map(d => { const m = {}; dayOwn(d).forEach(o => { m[o.id] = o; }); return m; });
+
+      // 예상 인건비율 — 매장 전체 × 요일이라 이 화면이 제자리다.
+      //   이미 집계된 날은 **실제 인건비**(forecast_ref)를 그대로 쓴다. 스케줄 추정으로
+      //   덮으면 하루 입력 화면의 배너와 같은 날 숫자가 달라진다.
+      //   아직 집계 전인 날(앞으로의 스케줄)과 오늘만 화면 값으로 추정한다.
+      //   추정 기준은 이 표가 그리는 것과 같다(저장분 + 오늘 입력 중인 값 = wkBaseEntry).
+      //   주간 입력의 미저장 편집분은 일부러 넣지 않는다 — 표에 안 보이는 값이
+      //   비율에만 반영되면 숫자가 어디서 왔는지 알 수 없다.
+      const fcRef = (STATE.forecast_ref || {}).by_date || {};
+      const wkOv = {};
+      ds.forEach(d => {
+        if (d !== STATE.date && Number((fcRef[d] || [])[1] || 0) > 0) return;   // 실제 기록이 있다
+        wkOv[d] = estDayLabor((id) => wkBaseEntry(d, id), d);
+      });
+      h += laborRatioCard(ds[0], wkOv, { days: false });   // 요일 배지는 아래 머리행에 있다
+      const dayRates = Object.fromEntries(weekDayRatios(ds[0], wkOv).map(x => [x.date, x]));
+
       // 지정 공휴일은 **날짜 머리행**에 표시한다 — 그 날은 전원 자동 가산이라
       // 사람마다 🎌 를 붙이면 개별 지정(주6일째 등)과 구분이 안 된다. 봇이 그리는
       // 주간표 이미지(send_weekly_table)와 같은 규칙.
-      h += `<div class="wk-wrap"><table class="wk"><tr><th class="dcol">직원</th>${ds.map((d, i) => `<th>${d.slice(5).replace('-', '/')}<br>${WDAYS[i]}${isOfficialHoliday(d) ? '<br><span class="hol-day">🎌 공휴일</span>' : ''}</th>`).join('')}</tr>`;
+      // 그날 인건비율도 같은 머리행에 — 열을 훑으면 어느 날이 비싼지가 바로 보인다.
+      const rateBadge = (d) => {
+        const dr = dayRates[d];
+        return (dr && dr.ratio !== null)
+          ? `<br><span class="wk-rate ${dr.level}" title="그날 예상 인건비율">${(dr.ratio * 100).toFixed(0)}%</span>`
+          : '';
+      };
+      // 정상 범위면 카드가 안 뜨는데 머리행에는 회색 %가 남는다 — 그게 뭔지는 적어둬야 한다
+      if (ds.some(d => dayRates[d] && dayRates[d].ratio !== null)) {
+        h += `<div class="av-note">머리행의 <b>%</b> = 그날 예상 인건비율(최근 같은 요일 매출 기준) · `
+           + `<span class="wk-rate high" style="margin:0">높음</span> `
+           + `<span class="wk-rate low" style="margin:0">낮음</span></div>`;
+      }
+      h += `<div class="wk-wrap"><table class="wk"><tr><th class="dcol">직원</th>${ds.map((d, i) => `<th>${d.slice(5).replace('-', '/')}<br>${WDAYS[i]}${isOfficialHoliday(d) ? '<br><span class="hol-day">🎌 공휴일</span>' : ''}${rateBadge(d)}</th>`).join('')}</tr>`;
       emps.forEach(e => {
         // 직급 — 이름 위 줄, 가운데 정렬 (명단 외 ※ 직원은 직급 미상 → 생략)
         h += `<tr><td class="dcol">${e.grade ? `<span class="grade">${e.grade}</span>` : ''}${e.name}</td>`;
