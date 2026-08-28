@@ -5,6 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>스케줄 입력</title>
   <!-- build: 2026-07-06 r2 (근무자만·휴게반영) — Pages 배포 실패 재트리거 -->
+  <!-- ⚠️ 이 파일은 **정본**일 뿐, 매장이 여는 화면이 아니다.
+       매니저는 GitHub Pages(das00n/eggdrop-labor — 별도 레포)를 연다.
+       고친 뒤 VM 에서 `bash scripts/push_miniapp.sh "메시지"` 를 돌려야 실제로 나간다.
+       `git pull` 만 하면 VM 파일만 최신이 되고 매장 화면은 그대로인데, VM 에서 grep 으로
+       확인하면 "반영됐다"로 보인다 — 확인을 하고도 틀린 결론이 나온다.
+       확인은 실제 URL 로: curl -s https://das00n.github.io/eggdrop-labor/ | grep ...
+       그래도 매니저 화면이 옛날이면 텔레그램 캐시다 — 미니앱을 닫고 /sc 로 다시 열게 한다. -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
   <style>
@@ -2080,10 +2087,28 @@
       return out;
     }
 
-    /** 상한을 넘는 [{emp, week, hours}]. 넘는 게 없으면 [] = 저장해도 된다.
-     *  byDate = {날짜: {empId: 시간}} — 이번 저장이 넣을 값. */
+    /** 그 주 이 직원의 **타매장** 근무시간 — 우리가 손댈 수 없는 부분. */
+    function otherWeekHoursFor(empId, weekStart) {
+      let total = 0;
+      for (let i = 0; i < 7; i++) {
+        const d = addDays(weekStart, i);
+        for (const r of (((STATE.other_store_work_by_date || {})[d] || {})[empId] || [])) {
+          total += Number(r.h || 0);
+        }
+      }
+      return Math.round(total * 10) / 10;
+    }
+
+    /** 상한을 넘는 [{emp, week, hours, here, allow, cut}]. 넘는 게 없으면 [] = 저장해도 된다.
+     *  byDate = {날짜: {empId: 시간}} — 이번 저장이 넣을 값.
+     *
+     *  ★ 합계가 넘는다고 다 막지 않는다. 타매장 근무만으로 이미 상한을 넘으면 우리 매장이
+     *    무엇을 해도 내려가지 않는다 — 그때 막으면 이 매장은 영원히 저장하지 못한다
+     *    (2026-08-28 신논현역점). 그런 경우는 **이번 입력이 더 키울 때만** 막는다.
+     *    봇(src/week_limit.check_week_limit)과 같은 규칙이어야 한다. */
     function weekLimitHits(byDate) {
       const weeks = [...new Set(Object.keys(byDate).map(weekStartOf))];
+      const r1 = (v) => Math.round(v * 10) / 10;
       const hits = [];
       for (const emp of STATE.employees) {
         if (STATE.deletedEmployees.includes(emp.id)) continue;
@@ -2091,7 +2116,12 @@
           const ov = {};
           for (const d of Object.keys(byDate)) ov[d] = Number(byDate[d][emp.id] || 0);
           const h = weekHoursFor(emp.id, wk, ov);
-          if (h > WEEK_LIMIT) hits.push({ emp, week: wk, hours: h });
+          if (h <= WEEK_LIMIT) continue;
+          const other = otherWeekHoursFor(emp.id, wk);
+          if (other > WEEK_LIMIT && h <= weekHoursFor(emp.id, wk, null)) continue;
+          const allow = Math.max(0, r1(WEEK_LIMIT - other));
+          const here = r1(h - other);
+          hits.push({ emp, week: wk, hours: h, here, allow, cut: Math.max(0, r1(here - allow)) });
         }
       }
       return hits.sort((a, b) => b.hours - a.hours);
@@ -2236,8 +2266,12 @@
         return `${+a[0]}/${+a[1]}~${+b[0]}/${+b[1]}`;
       };
       return `⛔ 주 ${WEEK_LIMIT}시간을 넘어 저장할 수 없습니다.\n\n`
-        + hits.map(h => `• ${h.emp.label || h.emp.name} — ${lbl(h.week)} 주 ${h.hours}h `
-            + `(상한 ${WEEK_LIMIT}h · ${Math.round((h.hours - WEEK_LIMIT) * 10) / 10}h 초과)`).join('\n')
+        // 남은 시간은 사람 기준으로 적는다 — "이 매장 근무를 넣을 수 없습니다" 라고 쓰면
+        // 다른 매장에는 넣어도 되는 것처럼 읽힌다. 상한은 사람의 것이다.
+        + hits.map(h => `• ${h.emp.label || h.emp.name} — ${lbl(h.week)} 주 · 우리 매장 ${h.here}h\n`
+            + (h.allow > 0
+                ? `   → 이번 주 남은 근무 가능 시간은 ${h.allow}h 입니다 (${h.cut}h 이상 줄여주세요)`
+                : `   → 이번 주는 어느 매장에서도 더 근무할 수 없습니다 (주 ${WEEK_LIMIT}시간 도달)`)).join('\n')
         + `\n\n주 ${WEEK_LIMIT}시간은 연장을 포함한 법정 상한입니다. `
         + `근로시간은 사람 기준이라 다른 매장 근무까지 모두 합산해 판정합니다.\n\n`
         + `스케줄을 줄여 다시 입력해주세요.`;
