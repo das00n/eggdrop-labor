@@ -2110,6 +2110,35 @@
       return out;
     }
 
+    /** 이 직원은 정보(전화번호)를 채워야 하는가. 신규 등록분은 이미 필수로 받았다. */
+    function needsInfo(empId) {
+      const emp = (STATE.employees || []).find(e => e.id === empId);
+      return !!emp && !emp.isNew && !emp.has_info;
+    }
+
+    /** 근무를 넣었는데 정보가 없는 직원의 표기 이름 — 없으면 [].
+     *  worked = {empId: 시간}. 봇(labor_bot.missing_info_workers)과 같은 규칙이어야 한다. */
+    function missingInfoNames(worked) {
+      const out = [];
+      for (const [id, h] of Object.entries(worked || {})) {
+        if (!(Number(h) > 0)) continue;
+        if ((STATE.deletedEmployees || []).includes(id)) continue;
+        if (!needsInfo(id)) continue;
+        const emp = STATE.employees.find(e => e.id === id);
+        const nm = (emp && (emp.label || emp.name)) || id;
+        if (!out.includes(nm)) out.push(nm);
+      }
+      return out;
+    }
+
+    function missingInfoMessage(names) {
+      return '⛔ 전화번호가 없는 직원은 스케줄에 넣을 수 없습니다.\n\n'
+        + names.map(n => `• ${n}`).join('\n')
+        + '\n\n전화번호는 같은 분인지 가리는 유일한 근거입니다. 없이 근무만 쌓이면 '
+        + '한 분이 매장마다 다른 사람으로 갈려 주 52시간·담당매출·격려금이 어긋납니다.\n\n'
+        + '이름 옆 [📇 정보] 를 눌러 전화번호를 넣어주세요.';
+    }
+
     /** 근무 토글이 꺼진 줄에 쓸 문구 — 지원 가 있으면 '휴무'라고 하지 않는다. */
     function offLabelFor(empId) {
       const away = awaySupportFor(empId);
@@ -2779,6 +2808,18 @@
     // ───────── 토글 ─────────
     function toggleOn(empId) {
       const ent = STATE.entries[empId];
+      // 정보(전화번호)가 없는 직원은 근무로 넣을 수 없다 (2026-08-30 다순님).
+      // 번호가 사람을 잇는 유일한 근거다 — 없이 근무만 쌓이면 한 분이 매장마다 다른
+      // 사람으로 갈려 주 52시간·담당매출이 어긋난다(김영현·양홍천·이승윤이 그랬다).
+      // 막기만 하면 막다른 길이라 **모달을 바로 열어** 그 자리에서 끝내게 한다.
+      if (!ent.on && needsInfo(empId)) {
+        openInfoModal(empId);
+        say('전화번호가 등록되어 있지 않아 근무를 넣을 수 없습니다.\n\n'
+          + '전화번호는 같은 분인지 가리는 유일한 근거입니다 — 없으면 한 분이 매장마다 '
+          + '다른 사람으로 갈려 주 52시간·담당매출이 어긋납니다.\n\n'
+          + '번호를 넣어주세요.');
+        return;
+      }
       ent.on = !ent.on;
       if (ent.on && !ent.in) {
         // 휴무 → 근무 전환 시 어제 시간 복원
@@ -3336,6 +3377,10 @@
         for (const [id, h] of Object.entries(supportHoursToday())) {
           byEmp[id] = (byEmp[id] || 0) + h;
         }
+        // 정보 검사가 **먼저**다. 번호가 없으면 그 사람이 누구인지부터 확정되지 않아
+        // 주 합계 자체가 못 믿을 값이 된다.
+        const miss = missingInfoNames(byEmp);
+        if (miss.length > 0) { say(missingInfoMessage(miss)); return; }
         const wlHits = weekLimitHits({ [STATE.date]: byEmp });
         if (wlHits.length > 0) { say(weekLimitMessage(wlHits)); return; }
       }
@@ -3672,6 +3717,11 @@
             }
           }
         });
+        const missWk = [];
+        for (const d of Object.keys(byDate)) {
+          for (const n of missingInfoNames(byDate[d])) if (!missWk.includes(n)) missWk.push(n);
+        }
+        if (missWk.length > 0) { say(missingInfoMessage(missWk)); return; }
         const wlHits = weekLimitHits(byDate);
         if (wlHits.length > 0) { say(weekLimitMessage(wlHits)); return; }
       }
