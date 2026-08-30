@@ -195,6 +195,13 @@
       font-variant-numeric: tabular-nums;
     }
 
+    /* 타매장 지원 중 — 휴무가 아니다. 같은 회색으로 두면 쉬는 줄로 읽힌다. */
+    .off-label.away {
+      color: var(--link, #2481cc);
+      background: rgba(36, 129, 204, .08);
+      font-weight: 500;
+    }
+
     /* "휴무" 표시 */
     .off-label {
       grid-column: 1 / 4;
@@ -986,6 +993,10 @@
 
       <div class="modal-section-title" id="del-day-label">마지막 근무일</div>
       <input class="form-input" id="del-last-day" type="date">
+      <p class="modal-sub" style="margin-top:6px" id="del-day-hint">
+        <b>지우는 날이 아니라 실제 마지막 근무일</b>입니다. 지난 날짜도, 앞날도 넣을 수 있어요
+        (앞날이면 그날까지 명단에 남습니다).
+      </p>
 
       <div id="del-store-area" style="display:none">
         <div class="modal-section-title">발령 매장</div>
@@ -2066,6 +2077,49 @@
       return dupHitsFor(STATE.date, empId, STATE.entries[empId]);
     }
 
+    /** 오늘 이 직원이 **다른 매장에 지원 가 있으면** [{store, hours}] — 없으면 [].
+     *
+     *  우리 매장 기준으로는 근무가 없어 화면에 '휴무'로 뜨지만 그 사람은 일하고 있다.
+     *  '휴무'라고만 쓰면 매니저는 쉬는 줄 알고 다른 날 근무를 더 얹는다 — 주 52시간은
+     *  사람 기준이라 그러면 상한을 넘긴다. 어디서 몇 시간인지까지 적는다.
+     *
+     *  ※ dupHitsFor 는 **우리 매장에서 근무 중일 때만** 준다(중복 경고용). 휴무 쪽은
+     *    아예 빈 배열이라 이 함수가 따로 있어야 한다.
+     */
+    function awaySupportFor(empId) {
+      const seen = new Set(), out = [];
+      const add = (store, hours) => {
+        const h = Math.round(Number(hours || 0) * 10) / 10;
+        if (!(h > 0) || !store) return;
+        const k = `${store}|${h}`;
+        if (seen.has(k)) return;
+        seen.add(k);
+        out.push({ store, hours: h });
+      };
+      // 이미 저장된 타매장 근무
+      for (const r of (((STATE.other_store_work_by_date || {})[STATE.date] || {})[empId] || [])) {
+        add(r.s, r.h);
+      }
+      // 지금 입력 중인 '지원갔음' — 아직 저장 전이라 위 목록에 없다.
+      // **id 로 견준다** — 이름으로 견주면 동명이인의 지원이 남의 줄에 붙는다.
+      for (const sp of (STATE.supportEntries || [])) {
+        if (sp.direction !== 'out') continue;
+        if (String(sp.employee_id || '') !== String(empId)) continue;
+        add(sp.other_store, sp.hours);
+      }
+      return out;
+    }
+
+    /** 근무 토글이 꺼진 줄에 쓸 문구 — 지원 가 있으면 '휴무'라고 하지 않는다. */
+    function offLabelFor(empId) {
+      const away = awaySupportFor(empId);
+      if (!away.length) return { html: '휴무 · 토글 ON으로 변경', away: false };
+      return {
+        html: '🔄 지원 · ' + away.map(a => `<b>${a.store}</b> ${a.hours}h`).join(' · '),
+        away: true,
+      };
+    }
+
     // ───────── 주 52시간 상한 ─────────
     //   ★ 봇(src/week_limit.py)과 **같은 값·같은 규칙**이어야 한다. 화면에서 통과한 값이
     //     서버에서 걸리면 매니저는 이유를 모른다(타매장 중복 경고와 같은 원칙).
@@ -2451,12 +2505,12 @@
           </div>
           <div class="half-row">${emp.grade !== 'Crew' ? `<div class="half-chip${ent.half ? ' active' : ''}" onclick="toggleHalf('${emp.id}')">${ent.half ? '✓ 반차 (0.5일)' : '☐ 반차 (절반 근무)'}</div>` : ''}${isOfficialHoliday() ? `<div class="half-chip active" style="margin-left:6px;pointer-events:none">🎌 지정 공휴일 (자동)</div>` : `<div class="half-chip hol-chip${ent.hol ? ' active' : ''}" onclick="toggleHol('${emp.id}')" style="margin-left:6px">${ent.hol ? '✓ 🎌 공휴일 근무' : '☐ 🎌 공휴일 근무'}</div>`}</div>
           ${dupNote}
-        ` : `
+        ` : (() => { const off = offLabelFor(emp.id); return `
           <div class="emp-time-row">
-            <div class="off-label">휴무 · 토글 ON으로 변경</div>
+            <div class="off-label${off.away ? ' away' : ''}">${off.html}</div>
           </div>
-          <div class="half-row"><div class="half-chip leave${ent.leave ? ' active' : ''}" onclick="toggleLeave('${emp.id}')">${ent.leave ? '✓ 🏖 연차 사용' : '☐ 🏖 연차 사용'}</div></div>
-        `)}
+          ${off.away ? '' : `<div class="half-row"><div class="half-chip leave${ent.leave ? ' active' : ''}" onclick="toggleLeave('${emp.id}')">${ent.leave ? '✓ 🏖 연차 사용' : '☐ 🏖 연차 사용'}</div></div>`}
+        `; })())}
       `;
       return row;
     }
@@ -2470,9 +2524,17 @@
       DEL_CTX = { empId, name: empName, reason: null };
       document.getElementById('del-title').textContent = `🗑 ${empName} 직원 삭제`;
       document.querySelectorAll('#del-reasons .rate-chip').forEach(c => c.classList.remove('selected'));
-      document.getElementById('del-last-day').value = _todayStr();
+      // ★ 비워 둔다 (2026-08-30 다순님). 오늘이 채워져 있으면 매니저는 그대로 넘어가고,
+      //   그러면 이 모달이 애초에 막으려던 실수 — "지운 날 = 마지막 근무일" — 가 그대로
+      //   들어간다. 발령이면 이 날짜가 **어떤 지원 기록을 지울지의 기준**이라 더 위험하다.
+      document.getElementById('del-last-day').value = '';
       document.getElementById('del-store-area').style.display = 'none';
       document.getElementById('del-day-label').textContent = '마지막 근무일';
+      // 사유를 고르면 delSetReason 이 다시 쓴다. 여기서 되돌리지 않으면 다른 직원으로
+      // 모달을 다시 열었을 때 **앞사람 사유의 안내**가 그대로 남는다.
+      document.getElementById('del-day-hint').innerHTML =
+        '<b>지우는 날이 아니라 실제 마지막 근무일</b>입니다. 지난 날짜도, 앞날도 넣을 수 있어요 '
+        + '(앞날이면 그날까지 명단에 남습니다).';
       // 발령 매장 목록 — 지원 근무와 같은 소스(자기 매장 제외)
       const sel = document.getElementById('del-to-store');
       sel.innerHTML = '<option value="">매장 선택</option>';
@@ -2492,6 +2554,11 @@
       document.getElementById('del-store-area').style.display = transfer ? '' : 'none';
       document.getElementById('del-day-label').textContent =
         transfer ? '본 매장에서의 마지막 근무일' : '마지막 근무일 (퇴사일)';
+      document.getElementById('del-day-hint').innerHTML = transfer
+        ? '<b>발령 매장으로 옮기기 전, 본 매장에서 마지막으로 근무한 날</b>입니다. '
+          + '이 날짜를 기준으로 그 이후의 지원 근무 기록이 정리됩니다.'
+        : '<b>지우는 날이 아니라 실제 마지막 근무일</b>입니다. 지난 날짜도, 앞날도 넣을 수 있어요 '
+          + '(앞날이면 그날까지 명단에 남습니다).';
     }
     function closeDeleteModal() {
       document.getElementById('del-modal').classList.remove('show');
@@ -2501,7 +2568,15 @@
       if (!DEL_CTX) return;
       if (!DEL_CTX.reason) { say('사유를 선택해주세요 (퇴사 / 타매장 발령)'); return; }
       const lastDay = document.getElementById('del-last-day').value;
-      if (!lastDay) { say('마지막 근무일을 입력해주세요'); return; }
+      if (!lastDay) {
+        say(DEL_CTX.reason === '발령'
+          ? '본 매장에서의 마지막 근무일을 입력해주세요.\n\n'
+            + '이 날짜를 기준으로 그 이후의 지원 근무 기록이 정리됩니다.'
+          : '마지막 근무일을 입력해주세요.\n\n'
+            + '지우는 날이 아니라 실제로 마지막으로 근무한 날입니다 — '
+            + '이 날짜까지의 근무가 급여에 반영됩니다.');
+        return;
+      }
       const toStore = DEL_CTX.reason === '발령'
         ? document.getElementById('del-to-store').value : '';
       if (DEL_CTX.reason === '발령' && !toStore) { say('발령 매장을 선택해주세요'); return; }
