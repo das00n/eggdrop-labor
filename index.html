@@ -2126,6 +2126,13 @@
      *    무엇을 해도 내려가지 않는다 — 그때 막으면 이 매장은 영원히 저장하지 못한다
      *    (2026-08-28 신논현역점). 그런 경우는 **이번 입력이 더 키울 때만** 막는다.
      *    봇(src/week_limit.check_week_limit)과 같은 규칙이어야 한다. */
+    /** 그날 우리 매장 시간 — 이번 저장에 그 날짜가 있으면 새 값, 없으면 저장된 값. */
+    function ov0(byDate, d, empId) {
+      if (Object.prototype.hasOwnProperty.call(byDate, d)) return Number(byDate[d][empId] || 0);
+      const e = ((STATE.prev_by_date_emp || {})[d] || {})[empId];
+      return Number((e && e.hours) || 0);
+    }
+
     function weekLimitHits(byDate) {
       const weeks = [...new Set(Object.keys(byDate).map(weekStartOf))];
       const r1 = (v) => Math.round(v * 10) / 10;
@@ -2141,7 +2148,23 @@
           if (other > WEEK_LIMIT && h <= weekHoursFor(emp.id, wk, null)) continue;
           const allow = Math.max(0, r1(WEEK_LIMIT - other));
           const here = r1(h - other);
-          hits.push({ emp, week: wk, hours: h, here, allow, cut: Math.max(0, r1(here - allow)) });
+          // 날짜·매장별 내역 — 차단 문구가 "언제 어디서 몇 시간"을 그대로 보여준다.
+          // 봇(src/week_limit.plan_week_hours 의 by_day)과 같은 내용이어야 한다.
+          const byDay = [];
+          for (let i = 0; i < 7; i++) {
+            const d = addDays(wk, i);
+            for (const r of (((STATE.other_store_work_by_date || {})[d] || {})[emp.id] || [])) {
+              if (Number(r.h || 0) > 0) byDay.push({ date: d, store: r.s || '타 매장',
+                                                     hours: r1(Number(r.h)), now: false });
+            }
+            const mine = ov0(byDate, d, emp.id);
+            if (mine > 0) byDay.push({ date: d, store: STATE.store || '우리 매장',
+                                       hours: r1(mine),
+                                       now: Object.prototype.hasOwnProperty.call(byDate, d) });
+          }
+          byDay.sort((a, b) => (a.date + a.store).localeCompare(b.date + b.store));
+          hits.push({ emp, week: wk, hours: h, here, allow, byDay,
+                      cut: Math.max(0, r1(here - allow)) });
         }
       }
       return hits.sort((a, b) => b.hours - a.hours);
@@ -2322,15 +2345,29 @@
         const a = wk.slice(5).split('-'), b = addDays(wk, 6).slice(5).split('-');
         return `${+a[0]}/${+a[1]}~${+b[0]}/${+b[1]}`;
       };
+      // 날짜 표기 — 봇 week_limit.day_label 과 같은 모양('8/24(월)').
+      const WD = ['일', '월', '화', '수', '목', '금', '토'];
+      const dl = (d) => {
+        const t = new Date(d + 'T00:00:00');
+        return `${t.getMonth() + 1}/${t.getDate()}(${WD[t.getDay()]})`;
+      };
       return `⛔ 주 ${WEEK_LIMIT}시간을 넘어 저장할 수 없습니다.\n\n`
+        // ★ 2026-08-30: 그 주 근무를 **날짜·매장까지 그대로 편다.** 직영점 전용이라
+        //   매장 간 근무는 사내 정보다. 감추면 매니저는 무엇을 얼마나 줄여야 할지
+        //   모른 채 같은 값을 다시 넣는다.
         // 남은 시간은 사람 기준으로 적는다 — "이 매장 근무를 넣을 수 없습니다" 라고 쓰면
         // 다른 매장에는 넣어도 되는 것처럼 읽힌다. 상한은 사람의 것이다.
-        + hits.map(h => `• ${h.emp.label || h.emp.name} — ${lbl(h.week)} 주 · 우리 매장 ${h.here}h\n`
+        + hits.map(h => `• ${h.emp.label || h.emp.name} — ${lbl(h.week)} 주 · 합계 ${h.hours}h`
+            + ` (상한 ${WEEK_LIMIT}h · ${Math.round((h.hours - WEEK_LIMIT) * 10) / 10}h 초과)\n`
+            + (h.byDay || []).map(d =>
+                `   ${dl(d.date)} ${d.store} ${d.hours}h${d.now ? '  ← 이번 저장' : ''}`).join('\n')
+            + (h.byDay && h.byDay.length ? '\n' : '')
             + (h.allow > 0
-                ? `   → 이번 주 남은 근무 가능 시간은 ${h.allow}h 입니다 (${h.cut}h 이상 줄여주세요)`
+                ? `   → 이번 주 ${STATE.store || '우리 매장'}에 넣을 수 있는 시간은 ${h.allow}h 입니다 (${h.cut}h 이상 줄여주세요)`
                 : `   → 이번 주는 어느 매장에서도 더 근무할 수 없습니다 (주 ${WEEK_LIMIT}시간 도달)`)).join('\n')
         + `\n\n주 ${WEEK_LIMIT}시간은 연장을 포함한 법정 상한입니다. `
-        + `근로시간은 사람 기준이라 다른 매장 근무까지 모두 합산해 판정합니다.\n\n`
+        + `근로시간은 사람 기준이라 다른 매장 근무까지 모두 합산해 판정합니다.\n`
+        + `다른 매장 근무가 있으면 그 매장과 조율이 필요합니다.\n\n`
         + `스케줄을 줄여 다시 입력해주세요.`;
     }
     function dupNoteHtml(empId) {
@@ -2470,11 +2507,62 @@
       if (DEL_CTX.reason === '발령' && !toStore) { say('발령 매장을 선택해주세요'); return; }
 
       const empId = DEL_CTX.empId;
-      if (!STATE.deletedEmployees.includes(empId)) STATE.deletedEmployees.push(empId);
-      STATE.deletedInfo[empId] = { reason: DEL_CTX.reason, last_day: lastDay, to_store: toStore || null };
-      if (STATE.entries[empId]) STATE.entries[empId].on = false;
-      closeDeleteModal();
-      refreshRow(empId);
+
+      // 발령이면 마지막 근무일 **이후의 지원 근무 기록이 지워진다.** 저장하고 나서 알리면
+      // 늦다 — 무엇이 사라지는지 보여주고 확인을 받는다 (2026-08-30 다순님).
+      //
+      // 두 곳을 다 본다. 봇(clear_support_after_transfer)은 매장을 가리지 않고
+      // direction != '자체' 인 행을 전부 지우기 때문이다:
+      //   · other_store_work_by_date — 우리 직원이 **타 매장**에서 한 근무
+      //   · prev_support_by_date     — **우리 매장**에 찍힌 지원 행(김영현이 이 경우다.
+      //     지원 온 분을 우리 매장 직원으로 또 등록해 '지원왔음'이 자기 매장에 쌓였다)
+      // 한쪽만 보면 정작 문제가 된 경우를 경고하지 못한 채 봇이 조용히 지운다.
+      function doomedSupport() {
+        const out = [];
+        for (const [d, byEmp] of Object.entries(STATE.other_store_work_by_date || {})) {
+          if (d <= lastDay) continue;
+          for (const r of (byEmp[empId] || [])) {
+            if (Number(r.h || 0) > 0) out.push(`${d} ${r.s || '타 매장'} ${r.h}h`);
+          }
+        }
+        for (const [d, list] of Object.entries(STATE.prev_support_by_date || {})) {
+          if (d <= lastDay) continue;
+          for (const r of (list || [])) {
+            // **id 로만 견준다.** 이름으로 견주면 동명이인의 근무를 지운다고 잘못 알린다.
+            if (String(r.employee_id || '') !== String(empId)) continue;
+            if (Number(r.hours || 0) > 0) {
+              out.push(`${d} ${STATE.store || '우리 매장'} ${r.hours}h`);
+            }
+          }
+        }
+        return [...new Set(out)].sort();
+      }
+
+      // 확인 대화상자는 **나중에** 콜백한다. 그 사이 closeDeleteModal() 이 DEL_CTX 를
+      // 비우므로, 필요한 값은 지금 붙잡아 둔다(안 그러면 콜백에서 null 을 읽는다).
+      const reason = DEL_CTX.reason, name = DEL_CTX.name;
+      const go = () => {
+        if (!STATE.deletedEmployees.includes(empId)) STATE.deletedEmployees.push(empId);
+        STATE.deletedInfo[empId] = { reason, last_day: lastDay, to_store: toStore || null };
+        if (STATE.entries[empId]) STATE.entries[empId].on = false;
+        closeDeleteModal();
+        refreshRow(empId);
+      };
+      if (reason === '발령') {
+        const doomed = doomedSupport();
+        if (doomed.length) {
+          const msg = `${name} 님을 ${toStore}(으)로 발령합니다.\n\n`
+            + `${lastDay} 이후 지원 근무 기록 ${doomed.length}건이 함께 지워집니다:\n`
+            + doomed.join('\n')
+            + `\n\n소속이 바뀌면 그 뒤 지원 기록은 옛 소속을 전제로 한 것이라 맞지 않습니다.`
+            + `\n실제로 근무한 것이라면 ${toStore}에서 다시 입력해주세요.`
+            + `\n\n지우고 발령할까요?`;
+          if (tg && tg.showConfirm) tg.showConfirm(msg, ok => { if (ok) go(); });
+          else if (confirm(msg)) go();
+          return;
+        }
+      }
+      go();
     }
     function undoEmpDelete(empId) {
       STATE.deletedEmployees = STATE.deletedEmployees.filter(id => id !== empId);
