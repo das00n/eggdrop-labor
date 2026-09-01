@@ -952,6 +952,29 @@
     </div>
   </div>
 
+  <!-- ───────── 본인 확인 요청 Modal (2026-09) ─────────
+       누가 어느 직원인지(employee_telegram)는 지금 '내 기록'을 연 사람만 등록된다.
+       그런데 그 표에 직급 변경 권한이 걸려 있어, **자기 선언만으로 매핑을 만들면
+       권한이 샌다** — Pro 매니저가 SM 직원을 고르면 그만으로 급여를 바꿀 수 있다.
+       그래서 여기서는 요청만 하고, 등록은 본사 승인 뒤에 이뤄진다. -->
+  <div class="modal-backdrop" id="identity-modal">
+    <div class="modal">
+      <h2 class="modal-title">🙋 본인 확인 요청</h2>
+      <p class="modal-sub">
+        이 텔레그램 계정이 <b>명단의 누구인지</b> 알려주세요.
+        본사 승인 뒤에 <b>내 기록</b> 조회가 열립니다.
+      </p>
+      <select class="form-input" id="idc-emp" style="margin:10px 0"></select>
+      <p class="modal-sub">
+        <b>본인만</b> 요청해주세요. 승인·거절은 본사가 확인 후 결정하며, 결과를 알려드립니다.
+      </p>
+      <div class="modal-actions">
+        <button class="modal-btn secondary" onclick="closeIdentityModal()">취소</button>
+        <button class="modal-btn primary" onclick="sendIdentityClaim()">본사에 요청</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ───────── 지원 근무 삭제 확인 Modal ─────────
        저장은 그날 지원 근무를 **화면에 있는 것으로 통째 교체**한다. 화면에서 빠진 지원은
        조용히 사라진다 — 2026-09-01 압구정역점 8/4 에서 한소담 지원 1건(211,255원)이
@@ -1427,6 +1450,13 @@
       addBtn.textContent = '👤 새 직원 추가';
       addBtn.onclick = openAddModal;
       addSec.appendChild(addBtn);
+      // 🙋 본인 확인 — 이 텔레그램 계정이 명단의 누구인지 본사 승인을 받아 등록한다.
+      //   '내 기록' 조회와 (SV·SM 이면) 직급 변경이 여기에 걸려 있다.
+      const meBtn = document.createElement('div');
+      meBtn.className = 'add-btn add-employee-btn';
+      meBtn.textContent = '🙋 본인 확인 요청';
+      meBtn.onclick = openIdentityModal;
+      addSec.appendChild(meBtn);
       main.appendChild(addSec);
     }
 
@@ -2848,6 +2878,29 @@
     /** 지금 화면의 입력값으로 본 오늘 인건비 — {날짜: 금액}. 저장 전 판정에 쓴다. */
     function todayOverride() {
       return { [STATE.date]: estDayLabor((id) => STATE.entries[id], STATE.date) };
+    }
+
+    // ───────── 🙋 본인 확인 요청 ─────────
+    function openIdentityModal() {
+      const sel = document.getElementById('idc-emp');
+      sel.innerHTML = '<option value="">본인을 골라주세요</option>'
+        + STATE.employees.filter(e => !e.isNew)
+            .map(e => `<option value="${e.id}">${e.name} (${e.grade})</option>`).join('');
+      document.getElementById('identity-modal').classList.add('show');
+    }
+    function closeIdentityModal() {
+      document.getElementById('identity-modal').classList.remove('show');
+    }
+    function sendIdentityClaim() {
+      const id = document.getElementById('idc-emp').value;
+      if (!id) { say('본인을 골라주세요.'); return; }
+      if (!tg) { say('텔레그램 환경에서만 요청할 수 있습니다.'); return; }
+      const emp = STATE.employees.find(e => e.id === id);
+      closeIdentityModal();
+      // 등록은 본사 승인 뒤에 일어난다 — 여기서는 요청만 보낸다(서버가 요청자 user_id 를 안다).
+      tg.sendData(JSON.stringify({ type: 'identity_claim', store: STATE.store,
+                                   employee_id: id, employee_name: emp ? emp.name : '' }));
+      setTimeout(() => { try { tg.close(); } catch (e) {} }, 150);
     }
 
     // ───────── 바뀐 것이 없으면 보내지 않는다 (2026-09-01 다순님) ─────────
