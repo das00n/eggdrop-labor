@@ -2576,7 +2576,7 @@
             ${(!emp.isNew && !emp.has_info)
               ? `<span class="info-need" onclick="openInfoModal('${emp.id}')" title="전화번호·생년월일 등록">📇 정보</span>`
               : ''}
-            ${(STATE.is_operator && !emp.isNew && emp.grade !== 'Crew')
+            ${(STATE.can_grade && !emp.isNew && emp.grade !== 'Crew')
               ? `<span class="emp-grade ${emp.grade}" style="cursor:pointer" onclick="openGradeModal('${emp.id}')" title="직급 변경">${emp.grade} ✎</span>`
               : `<span class="emp-grade ${emp.grade}">${emp.grade}</span>`}
             ${crewRateChip}
