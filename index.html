@@ -1271,6 +1271,7 @@
 
       renderMain();
       updateSummary();
+      markDayClean();      // 진입 시점 = '안 바뀐 상태' 의 기준
       document.getElementById('save-btn').disabled = false;
       applyReadonly();   // 조회 전용 날짜로 진입했으면 다시 잠근다
       document.getElementById('tabbar').style.display = 'flex';   // 주간표·시간대 인원 탭 활성화
@@ -1406,6 +1407,10 @@
         main.appendChild(renderSection('🟡 크루', parttime));
       }
 
+      // 🗂 명단 외(퇴사·이동) 근무 — 읽기 전용
+      const exSec = renderExternalSection();
+      if (exSec) main.appendChild(exSec);
+
       // 🔄 지원 섹션
       main.appendChild(renderSupportSection());
 
@@ -1423,6 +1428,49 @@
       addBtn.onclick = openAddModal;
       addSec.appendChild(addBtn);
       main.appendChild(addSec);
+    }
+
+    /** 이 날짜에 근무 기록이 있는데 **현재 명단에는 없는** 직원 — [{id, name, ...}]. */
+    function externalWork(dateStr) {
+      const m = (STATE.prev_by_date_emp || {})[dateStr] || {};
+      const roster = new Set(STATE.employees.map(e => e.id));
+      return Object.keys(m)
+        .filter(k => !roster.has(k) && m[k] && m[k].in && m[k].out)
+        .map(k => ({ id: k, ...m[k] }))
+        .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko'));
+    }
+
+    /** 명단 외 근무 섹션. 없으면 null.
+     *
+     *  ## 왜 보여주는가 (2026-09-01)
+     *  입력 화면은 현재 명단만 그린다(applyPrevForDate). 그래서 퇴사·이동한 직원이
+     *  근무한 날을 열면 `근무 0` 으로 보이는데, 📆 주간표에는 그 사람이 나온다.
+     *  같은 날을 두 화면이 다르게 말하니 매니저는 "그날 아무도 없었다"고 믿게 되고,
+     *  그 오해가 압구정역점 8/4 사고의 출발점이었다.
+     *
+     *  **편집은 안 된다.** 명단에 없는 사람이라 시간을 고칠 자리가 없고, 서버도 이
+     *  행들을 보존만 한다(save_attendance_rows). 있다는 것을 알리는 것이 전부다. */
+    function renderExternalSection() {
+      const rows = externalWork(STATE.date);
+      if (!rows.length) return null;
+      const sec = document.createElement('div');
+      sec.className = 'section';
+      sec.id = 'external-section';
+      sec.innerHTML =
+        `<div class="section-header"><span class="section-title">🗂 명단 외 근무</span>`
+        + `<span class="section-count">${rows.length}건</span></div>`
+        + `<div class="av-note" style="padding:0 2px 8px">`
+        + `현재 직원 명단에 없는 분(퇴사·이동)의 그날 근무입니다. `
+        + `<b>여기서는 수정할 수 없고, 저장해도 지워지지 않습니다.</b> `
+        + `📆 주간표에도 <b>※</b> 로 표시됩니다.</div>`
+        + rows.map(r =>
+            `<div class="wk-day is-off">`
+            + `<span class="wk-date" style="width:auto;min-width:72px">※${r.name || r.id}`
+            + `${r.half ? '<span class="wk-dnum">반차</span>' : ''}</span>`
+            + `<span class="wk-tilde" style="margin-left:8px">${r.in}~${r.out}</span>`
+            + `<span class="wk-rate" title="그날 근무시간">`
+            + `${(Number(r.hours) || 0).toFixed(1)}h</span></div>`).join('');
+      return sec;
     }
 
     // ───────── 🏢 본사 근무 (슈퍼바이징 · 푸드트럭) ─────────
@@ -1996,6 +2044,7 @@
       renderHeader();
       renderMain();
       updateSummary();
+      markDayClean();      // 이 날짜의 '안 바뀐 상태' 를 기준으로 잡는다
       closeDateModal();
     }
 
@@ -2801,6 +2850,42 @@
       return { [STATE.date]: estDayLabor((id) => STATE.entries[id], STATE.date) };
     }
 
+    // ───────── 바뀐 것이 없으면 보내지 않는다 (2026-09-01 다순님) ─────────
+    //   아무것도 안 고치고 저장만 눌러도 매장방에 "○○님이 스케줄을 변경했습니다" 가
+    //   뜨고, 그날이 통째로 지워졌다 다시 들어간다. 바뀐 것이 없으면 그럴 이유가 없다.
+    //   **보내지 않는 것이 가장 안전하다** — 전송이 없으면 wipe-insert 도 없다.
+
+    /** 지금 화면을 저장분과 비교할 수 있는 한 줄로. 같으면 바뀐 것이 없다. */
+    function daySignature() {
+      const ent = STATE.employees.map(e => {
+        const t = STATE.entries[e.id] || {};
+        const on = !!(t.on && t.in && t.out) && !STATE.deletedEmployees.includes(e.id);
+        return [e.id, on, on ? t.in : '', on ? t.out : '',
+                on ? Math.round((t.breakH || 0) * 10) : 0,
+                on ? (t.break_start || '') : '', on ? (t.break_end || '') : '',
+                on ? !!t.half : false, on ? !!t.hol : false, on ? false : !!t.leave];
+      });
+      const sup = (STATE.supportEntries || []).map(x =>
+        [x.direction, x.other_store, x.name, x.grade, x.in || '', x.out || '',
+         Math.round((x.breakH || 0) * 10)]).sort();
+      const hq = (STATE.hqSegments || []).map(x =>
+        [x.name, x.from, x.to, x.kind, x.note || '']).sort();
+      return JSON.stringify([ent, sup, hq]);
+    }
+
+    /** 화면을 열었을 때(또는 날짜를 바꿨을 때)의 지문. 저장 시 이것과 비교한다. */
+    let DAY_SIG0 = null;
+    function markDayClean() { DAY_SIG0 = daySignature(); }
+
+    /** 저장할 것이 있는가. 명단·시급 변경처럼 날짜와 무관한 것도 함께 본다. */
+    function dayHasChanges() {
+      if ((STATE.newEmployees || []).length) return true;
+      if ((STATE.deletedEmployees || []).length) return true;
+      if ((STATE.employeeInfo || []).length) return true;
+      if (Object.keys(STATE.crewRateChanges || {}).length) return true;
+      return DAY_SIG0 === null || daySignature() !== DAY_SIG0;
+    }
+
     // ───────── 저장 전 지원 근무 삭제 확인 ─────────
     //   저장 = (매장, 날짜) 통째 교체다. 자체 근무는 서버가 명단 외 직원 것을 보존하지만
     //   지원 근무는 보존 대상이 아니다 — 보존해 버리면 잘못 넣은 지원을 지울 길이 없어진다.
@@ -3402,6 +3487,11 @@
       // 조회 전용 날짜 — 버튼도 잠기지만, 어떤 경로로 들어와도 전송하지 않는다.
       if (!canEditDate()) {
         say('🔒 입력 기간이 지난 날짜라 저장할 수 없습니다.\n조회만 가능해요 — 수정이 필요하면 본사에 알려주세요.');
+        return;
+      }
+      // 바뀐 것이 없으면 보내지 않는다 — 매장방 알림도, 그날 통째 재저장도 없다
+      if (!dayHasChanges()) {
+        say('변경된 내용이 없습니다.\n\n고치신 뒤에 저장해주세요.');
         return;
       }
       // 출근 ON + 시간 미입력 직원 차단
