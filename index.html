@@ -3381,7 +3381,8 @@
       const emp = STATE.employees.find(e => e.id === INFO_CTX.empId);
       if (emp) { emp.phone = phone; emp.birthday = birthday; emp.hired_at = hired_at; emp.has_info = true; }
       closeInfoModal();
-      renderMain();
+      // 주간입력에서 열었으면 그 화면을 다시 그려야 📇 표시가 사라진다
+      if (TAB === 'day') renderMain(); else renderAltViews();
       say('저장 시 함께 등록됩니다');
     }
 
@@ -3475,14 +3476,29 @@
       document.getElementById('add-modal').classList.add('show');
     }
 
-    /** 전화번호 숫자만 남겨 하이픈을 넣는다 — 표기가 제각각이면 같은 사람을 못 알아본다. */
+    /** 전화번호에서 숫자만 남긴다. 국가번호(+82)는 떼고 0 을 붙인다.
+     *
+     *  ## 왜 +82 를 따로 보는가 (2026-09-01)
+     *  카카오톡·연락처에서 복사하면 '+82 10-1234-5678' 로 붙는다. 숫자만 남기면
+     *  821012345678(12자리)이고, 앞 11자리만 자르면 **82101234567 이라는 없는 번호**가
+     *  자릿수 검사를 통과해 그대로 저장된다. 그 번호로는 아무와도 이어지지 않으니
+     *  그 사람은 매장마다 다른 사람으로 갈린다 — 번호를 안 받은 것보다 나쁘다.
+     *  국내 번호는 8 로 시작하지 않으므로 앞의 82 는 국가번호로 봐도 안전하다.
+     *  봇 _norm_phone 과 **같은 규칙이어야 한다** — 화면에서 통과한 것이 서버에서
+     *  걸리면 매니저는 이유를 모른다. */
+    const phoneDigits = (v) => {
+      let d = String(v || '').replace(/\D/g, '');
+      if (d.startsWith('82')) d = '0' + d.slice(2).replace(/^0/, '');
+      return d;
+    };
+
+    /** 입력 중인 칸을 숫자만 남겨 하이픈을 넣는다 — 표기가 제각각이면 같은 사람을 못 알아본다. */
     function addFormatPhone(el) {
-      const d = String(el.value || '').replace(/\D/g, '').slice(0, 11);
+      const d = phoneDigits(el.value).slice(0, 11);
       el.value = d.length > 7 ? `${d.slice(0,3)}-${d.slice(3,7)}-${d.slice(7)}`
                : d.length > 3 ? `${d.slice(0,3)}-${d.slice(3)}`
                : d;
     }
-    const phoneDigits = (v) => String(v || '').replace(/\D/g, '');
 
     function addSetCrewRate(v) {
       AM_CTX.crew_rate = v;
@@ -3781,9 +3797,16 @@
       const dirty = wkDirtyDates();
       let h = `<div class="av-nav"><button type="button" onclick="navWeek(-1)">‹</button><b>🗓 주간 입력 ${label}</b><button type="button" onclick="navWeek(1)">›</button></div>`;
       h += `<div class="av-note">직원을 골라 한 주를 한 번에 입력합니다. [💾 주간 저장] 전까지는 이 화면에만 보관됩니다.<br>⚠️ 실제 근무시간이 스케줄과 다르면 <b>퇴근 전에 반드시 수정</b>해 주세요.</div>`;
+      // 이름은 label(동명이인 꼬리표) 우선 — 여기만 e.name 이면 최예영-A/-B 를 못 가른다.
+      // 📇 는 번호가 없어 근무를 넣을 수 없는 분 — 고르기 전에 보이는 편이 낫다.
       h += `<select class="wk-emp" onchange="wkSelectEmp(this.value)">`
-         + STATE.employees.map(e => `<option value="${e.id}"${e.id === WK_EMP ? ' selected' : ''}>${e.name} (${e.grade})</option>`).join('')
+         + STATE.employees.map(e => `<option value="${e.id}"${e.id === WK_EMP ? ' selected' : ''}>`
+             + `${needsInfo(e.id) ? '📇 ' : ''}${e.label || e.name} (${e.grade})</option>`).join('')
          + `</select>`;
+      if (needsInfo(WK_EMP)) {
+        h += `<div class="av-note" style="color:#c0392b">📇 전화번호가 없어 근무를 넣을 수 없습니다 — `
+           + `<b onclick="openInfoModal('${WK_EMP}')" style="text-decoration:underline;cursor:pointer">여기를 눌러</b> 번호를 넣어주세요.</div>`;
+      }
 
       // 이 주 합계 — 넘고 나서 저장 버튼에서 막히면 어디를 줄여야 할지 알 수 없다.
       // 타매장 근무까지 더한 값이다(근로시간은 사람 기준).
@@ -3845,6 +3868,17 @@
     function wkSelectEmp(id) { WK_EMP = id; renderWInput(); }
     function wkToggle(d) {
       const e = wkEdit(d, WK_EMP);
+      // 일별 입력과 **같은 자리에서** 막는다 (2026-09-01). 여기서 안 막으면 일주일치를
+      // 다 채운 뒤 저장에서 처음 걸리는데, 그때 안내는 "이름 옆 [📇 정보]" 라 이 화면에는
+      // 그런 자리가 없다 — 일별 입력으로 돌아가야 한다는 걸 스스로 알아내야 했다.
+      if (!e.on && needsInfo(WK_EMP)) {
+        openInfoModal(WK_EMP);
+        say('전화번호가 등록되어 있지 않아 근무를 넣을 수 없습니다.\n\n'
+          + '전화번호는 같은 분인지 가리는 유일한 근거입니다 — 없으면 한 분이 매장마다 '
+          + '다른 사람으로 갈려 주 52시간·담당매출이 어긋납니다.\n\n'
+          + '번호를 넣어주세요.');
+        return;
+      }
       e.on = !e.on;
       if (e.on && !(e.in && e.out)) {
         // 휴무→근무: 전주 같은 요일 → 직전 패턴 → 기본값(09:00~18:00) 순으로 시간 채움
