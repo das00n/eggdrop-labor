@@ -545,6 +545,17 @@
                font-variant-numeric: tabular-nums; flex-shrink: 0; }
     .wk-break { font-size: 12px; color: var(--text); opacity: 0.75; font-weight: 600; }
     .wk-tilde { color: var(--hint); }
+    /* 주간 입력 부가행 — 🏢 본사 근무 · 📋 점장 업무 · 🔄 다른 매장 근무 */
+    .wk-sub { display: flex; flex-wrap: wrap; gap: 5px; padding: 0 2px 8px 46px; border-bottom: 1px solid rgba(127,127,127,0.18);
+              margin-top: -1px; font-size: 11.5px; }
+    .wk-seg { padding: 3px 7px; border-radius: 7px; font-weight: 700; font-variant-numeric: tabular-nums;
+              border: 1px solid rgba(127,127,127,0.35); background: var(--section-bg); color: var(--text); }
+    .wk-seg.away { background: rgba(255,59,48,0.08); color: #c0392b; border-color: rgba(255,59,48,0.35); }
+    .wk-seg.duty { background: rgba(88,86,214,0.12); color: #5856d6; border-color: rgba(88,86,214,0.35); }
+    .wk-seg.other { background: rgba(255,149,0,0.12); color: #b45309; border-color: rgba(255,149,0,0.4); }
+    .wk-seg b { margin-left: 5px; cursor: pointer; opacity: 0.7; }
+    .wk-add { padding: 3px 7px; border-radius: 7px; font-weight: 700; cursor: pointer;
+              border: 1px dashed rgba(127,127,127,0.5); color: var(--hint); }
     .wk-actions { display: flex; gap: 8px; margin: 14px 0 4px; }
     .wk-act { flex: 1; padding: 13px; font-size: 14px; font-weight: 700; border-radius: 10px;
               border: 1px solid rgba(127,127,127,0.35); background: var(--section-bg); color: var(--text); }
@@ -613,6 +624,16 @@
     .hq-times { display: flex; align-items: center; gap: 8px; }
     .hq-times .hq-time { flex: 1; text-align: center; }
     .hq-hint { font-size: 11.5px; color: var(--hint); margin-top: 4px; }
+    .hq-fixed { font-size: 14px; font-weight: 700; padding: 8px 10px; border-radius: 8px;
+                background: var(--section-bg); border: 1px solid rgba(127,127,127,0.3); }
+    /* 📋 점장 업무 — 직원 줄 안의 칩 (SM·SV). 매장 근무의 일환이라 본사 섹션이 아니라 그 사람 줄에 붙는다 */
+    .duty-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; font-size: 12px; }
+    .duty-label { color: var(--hint); font-weight: 700; }
+    .duty-chip { padding: 4px 8px; border-radius: 8px; font-weight: 700; font-variant-numeric: tabular-nums;
+                 background: rgba(88,86,214,0.12); color: #5856d6; border: 1px solid rgba(88,86,214,0.35); }
+    .duty-chip b { margin-left: 6px; cursor: pointer; opacity: 0.7; }
+    .duty-add { padding: 4px 8px; border-radius: 8px; font-weight: 700; cursor: pointer;
+                border: 1px dashed rgba(127,127,127,0.5); color: var(--hint); }
     .hq-note {
       margin: 4px 0 0; padding: 8px 10px; border-radius: 8px;
       background: rgba(0,122,255,0.10); color: var(--text); font-size: 12px; line-height: 1.5;
@@ -834,14 +855,15 @@
   <!-- ───────── 🏢 본사 근무 (슈퍼바이징 · 푸드트럭) ───────── -->
   <div class="modal-backdrop" id="hq-modal">
     <div class="modal">
-      <h2 class="modal-title">🏢 본사 근무 추가</h2>
-      <p class="modal-sub">이 시간은 매장 인건비에서 빠져 본사로 넘어갑니다</p>
+      <h2 class="modal-title" id="hq-title">🏢 본사 근무 추가</h2>
+      <p class="modal-sub" id="hq-sub">이 시간은 매장 인건비에서 빠져 본사로 넘어갑니다</p>
 
       <label class="hq-label">직원</label>
       <select id="hq-emp" class="hq-select" onchange="hqSetEmp(this.value)"></select>
+      <div class="hq-fixed" id="hq-fixed" style="display:none"></div>
       <div class="hq-hint" id="hq-range"></div>
 
-      <label class="hq-label">종류</label>
+      <label class="hq-label" id="hq-kinds-label">종류</label>
       <div class="half-row" id="hq-kinds"></div>
 
       <label class="hq-label">시간</label>
@@ -860,6 +882,32 @@
       <div class="modal-actions">
         <button class="modal-btn secondary" onclick="closeHqModal()">취소</button>
         <button class="modal-btn" onclick="confirmHq()">추가</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ───────── 🔄 다른 매장 근무 (주간 입력 전용 · 지원갔음) ───────── -->
+  <div class="modal-backdrop" id="wk-away-modal">
+    <div class="modal">
+      <h2 class="modal-title">🔄 다른 매장 근무</h2>
+      <p class="modal-sub" id="wka-sub"></p>
+      <p class="modal-sub">그 매장이 인건비를 부담합니다(지원갔음). 우리 매장 근무와 시간이 겹칠 수 없어요.</p>
+
+      <label class="hq-label">매장</label>
+      <select id="wka-store" class="hq-select"></select>
+
+      <label class="hq-label">시간</label>
+      <div class="hq-times">
+        <input type="time" id="wka-from" class="hq-time">
+        <span class="wk-tilde">~</span>
+        <input type="time" id="wka-to" class="hq-time">
+      </div>
+      <label class="hq-hint" style="display:block;margin-top:8px"><input type="checkbox" id="wka-nobreak"> 휴게 없음 (기본: 8h↑ 1시간 · 4h↑ 30분 자동)</label>
+      <label class="hq-hint" id="wka-half" style="display:block;margin-top:4px"><input type="checkbox" id="wka-half-chk"> 반차 (절반 근무)</label>
+
+      <div class="modal-actions">
+        <button class="modal-btn secondary" onclick="closeWkAwayModal()">취소</button>
+        <button class="modal-btn" onclick="confirmWkAway()">추가</button>
       </div>
     </div>
   </div>
@@ -1544,13 +1592,24 @@
       return sec;
     }
 
-    // ───────── 🏢 본사 근무 (슈퍼바이징 · 푸드트럭) ─────────
-    //   그 시간은 매장 인건비에서 빠져 본사로 넘어간다. 급여(개인 지급액)는 그대로.
+    // ───────── 🏢 본사 근무 (슈퍼바이징 · 푸드트럭) · 📋 점장 업무 ─────────
+    //   본사 근무: 그 시간은 매장 인건비에서 빠져 본사로 넘어간다. 급여(개인 지급액)는 그대로.
+    //   점장 업무(2026-09-07): SM·SV 가 매장에서 점장 업무를 보는 시간. **매장 근무의 일환**이라
+    //     인건비는 한 원도 안 움직인다 — 본사가 "지금 어느 점장에게 전화할 수 있나"를 볼 때 쓴다.
+    //   둘 다 STATE.hqSegments 한 목록에 담기고 payload 키도 hq_segments 하나다(종류로 갈린다).
     //   판정 규칙은 봇 src/offsite.py 와 **같아야 한다** — 화면에서 통과한 것이 서버에서
     //   걸리면 매니저는 이유를 모른다.
-    const HQ_MAX_PER_PERSON = 3;
-    const HQ_KINDS = [['supervising', '슈퍼바이징'], ['foodtruck', '푸드트럭'], ['other', '기타']];
+    //   ★ 휴게와 겹치면 저장하지 않는다 — 어느 쪽을 나중에 넣든 그쪽이 막히고, 문구에
+    //     무엇과 언제 겹치는지가 들어간다(hqValidateCore · hqBreakConflicts).
+    const HQ_MAX_PER_PERSON = 3;   // 묶음(본사 / 점장)별
+    const HQ_AWAY_KINDS = [['supervising', '슈퍼바이징'], ['foodtruck', '푸드트럭'], ['other', '기타']];
+    const HQ_DUTY_KINDS = [['manager_duty', '점장 업무']];
+    const HQ_KINDS = HQ_AWAY_KINDS.concat(HQ_DUTY_KINDS);
+    const HQ_DUTY_GRADES = ['SM', 'SV'];
     const hqKindLabel = (k) => (HQ_KINDS.find((x) => x[0] === k) || [k, k])[1];
+    const hqIsAway = (k) => HQ_AWAY_KINDS.some((x) => x[0] === k);
+    const hqGroupLabel = (k) => (hqIsAway(k) ? '본사 근무' : '점장 업무');
+    const hqIcon = (k) => (hqIsAway(k) ? '🏢' : '📋');
 
     function hqMin(t) {              // 'HH:MM' → 분 (봇 offsite.to_min)
       const m = /^(\d{1,2}):(\d{2})$/.exec(String(t || '').trim());
@@ -1577,28 +1636,42 @@
     }
     const hqOverlap = (x, y) => Math.max(0, Math.min(x[1], y[1]) - Math.max(y[0], x[0]));
 
-    // 그 사람 그날 본사 시간(분) — 휴게 겹침 제외. 요약 표시용.
-    function hqMinutesFor(empId) {
-      const ent = STATE.entries[empId];
+    /** 그 사람 그날 **본사** 시간(분) — 휴게 겹침 제외. 점장 업무는 세지 않는다(봇 away_windows). */
+    function awayMinutesOf(ent, segs) {
       const win = hqShiftWin(ent);
       if (!win) return 0;
       const brk = (ent.break_start && ent.break_end) ? hqNorm(ent.break_start, ent.break_end, win) : null;
       let total = 0;
-      (STATE.hqSegments || []).filter((s) => s.id === empId).forEach((s) => {
+      (segs || []).forEach((s) => {
+        if (!hqIsAway(s.kind)) return;
         const cut = hqNorm(s.from, s.to, win);
         if (!cut) return;
         total += (cut[1] - cut[0]) - (brk ? hqOverlap(cut, brk) : 0);
       });
       return Math.max(0, total);
     }
+    function hqMinutesFor(empId) {
+      return awayMinutesOf(STATE.entries[empId], (STATE.hqSegments || []).filter((s) => s.id === empId));
+    }
     const hqTotalMinutes = () =>
       STATE.employees.reduce((a, e) => a + hqMinutesFor(e.id), 0);
+    /** 그 날짜의 저장된(오늘은 화면의) 구간 목록. 주간표·인건비율 추정이 쓴다. */
+    function hqSegmentsOn(dateStr) {
+      return dateStr === STATE.date ? (STATE.hqSegments || []) : ((STATE.hq_by_date || {})[dateStr] || []);
+    }
 
-    /** 구간 하나를 추가할 수 있는지 — 통과하면 null, 아니면 사유 문구. */
-    function hqValidate(empId, frm, to, kind, note, skipIdx) {
-      const ent = STATE.entries[empId];
+    /**
+     * 구간 하나를 넣을 수 있는지 — 통과하면 null, 아니면 사유 문구.
+     *   ent = 그날 근무(in/out/break_start/break_end) · emp = 직원(직급) · mine = 그 사람의 기존 구간
+     *   (자기 자신은 빼고 넘긴다). 봇 offsite.validate_segments 와 같은 규칙·같은 문구 뼈대.
+     */
+    function hqValidateCore(ent, emp, mine, frm, to, kind, note) {
       if (!ent || !ent.on || !ent.in || !ent.out) return '그 직원은 이 날 근무(출퇴근) 기록이 없습니다.';
       if (!HQ_KINDS.some((x) => x[0] === kind)) return '종류를 선택해주세요.';
+      const glabel = hqGroupLabel(kind);
+      if (!hqIsAway(kind) && !HQ_DUTY_GRADES.includes(emp && emp.grade)) {
+        return `점장 업무 시간은 SM·SV 직급만 넣을 수 있습니다 (직급 ${(emp && emp.grade) || '미상'}).`;
+      }
       const win = hqShiftWin(ent);
       if (!win) return '출퇴근 시간을 먼저 입력해주세요.';
       const a = hqMin(frm), b = hqMin(to);
@@ -1608,34 +1681,92 @@
       const cut = hqNorm(frm, to, win);
       if (!cut) return `출근~퇴근(${ent.in}~${ent.out}) 범위 안이어야 합니다.`;
       if (cut[1] - cut[0] < raw[1] - raw[0]) return `출근~퇴근(${ent.in}~${ent.out}) 범위를 벗어났습니다.`;
+      // ★ 휴게와 겹치면 막는다 — 무엇과 언제 겹치는지, 어떻게 풀지까지.
+      if (ent.break_start && ent.break_end) {
+        const brk = hqNorm(ent.break_start, ent.break_end, win);
+        if (brk && hqOverlap(cut, brk) > 0) {
+          return `${glabel} ${frm}~${to} 이(가) 휴게 ${ent.break_start}~${ent.break_end} 와 겹칩니다.\n\n`
+            + `휴게를 옮기거나 ${glabel} 시간을 조정해주세요. (휴게 중에는 ${glabel}를 넣을 수 없습니다)`;
+        }
+      }
       if (kind === 'other' && !isAdequateHolReason(note)) {
         return '종류가 \'기타\'면 사유를 적어주세요. (예: 본사 교육 참석)';
       }
-      const mine = (STATE.hqSegments || [])
-        .map((s, i) => ({ s, i })).filter((x) => x.s.id === empId && x.i !== skipIdx);
-      if (mine.length >= HQ_MAX_PER_PERSON) {
-        return `한 사람 하루 최대 ${HQ_MAX_PER_PERSON}개까지입니다.`;
+      const sameGroup = (mine || []).filter((s) => hqIsAway(s.kind) === hqIsAway(kind));
+      if (sameGroup.length >= HQ_MAX_PER_PERSON) {
+        return `${glabel}는 한 사람 하루 최대 ${HQ_MAX_PER_PERSON}개까지입니다.`;
       }
-      for (const { s } of mine) {
+      // 같은 사람의 구간끼리 — 종류가 달라도 겹치면 안 된다(본사에 나가 있으면서 점장 업무 불가)
+      for (const s of (mine || [])) {
         const o = hqNorm(s.from, s.to, win);
-        if (o && hqOverlap(cut, o) > 0) return `이미 등록한 ${s.from}~${s.to} 와 겹칩니다.`;
+        if (o && hqOverlap(cut, o) > 0) {
+          return `이미 등록한 ${hqGroupLabel(s.kind)}(${hqKindLabel(s.kind)}) ${s.from}~${s.to} 와 겹칩니다.`;
+        }
       }
       return null;
+    }
+    /** 하루 입력 화면용 — STATE.entries / STATE.hqSegments 기준. skipIdx = 자기 자신(수정 시). */
+    function hqValidate(empId, frm, to, kind, note, skipIdx) {
+      const emp = STATE.employees.find((e) => e.id === empId);
+      const mine = (STATE.hqSegments || []).filter((s, i) => s.id === empId && i !== skipIdx);
+      return hqValidateCore(STATE.entries[empId], emp, mine, frm, to, kind, note);
+    }
+
+    /**
+     * 휴게를 **나중에** 넣을 때 — 이미 있는 구간과 겹치면 그 문구 목록(비면 넣어도 된다).
+     * hqValidateCore 의 거울상(봇 offsite.break_conflicts). 어느 순서로 넣어도 겹친 채 저장되지 않는다.
+     */
+    function hqBreakConflicts(bs, be, ent, segs) {
+      const win = hqShiftWin(ent);
+      if (!win) return [];
+      const brk = hqNorm(bs, be, win);
+      if (!brk) return [];
+      const out = [];
+      (segs || []).forEach((s) => {
+        const cut = hqNorm(s.from, s.to, win);
+        if (cut && hqOverlap(cut, brk) > 0) {
+          out.push(`휴게 ${bs}~${be} 이(가) ${hqGroupLabel(s.kind)}(${hqKindLabel(s.kind)}) ${s.from}~${s.to} 와 겹칩니다.`);
+        }
+      });
+      return out;
+    }
+    /** 저장 직전 최종 점검 — 출퇴근을 나중에 바꿔 구간이 창 밖으로 밀렸거나, 자동 휴게가 구간 위에
+     *  다시 잡힌 경우를 잡는다(모달에서는 그 순간의 값만 본다). 문제 문구 목록, 비면 저장해도 된다. */
+    function hqSaveProblems(dateLabel, entryOf, segsOf) {
+      const out = [];
+      for (const emp of STATE.employees) {
+        if ((STATE.deletedEmployees || []).includes(emp.id)) continue;
+        const ent = entryOf(emp.id);
+        const segs = (segsOf(emp.id) || []);
+        if (!segs.length) continue;
+        const nm = emp.label || emp.name;
+        if (!(ent && ent.on && ent.in && ent.out)) {
+          out.push(`• ${dateLabel} ${nm} — 근무가 없는데 본사 근무·점장 업무 ${segs.length}건이 남아 있습니다. 구간을 지우거나 근무를 넣어주세요.`);
+          continue;
+        }
+        segs.forEach((s, i) => {
+          const others = segs.filter((_, j) => j !== i);
+          const err = hqValidateCore(ent, emp, others, s.from, s.to, s.kind, s.note || '');
+          if (err) out.push(`• ${dateLabel} ${nm} — ${hqIcon(s.kind)} ${s.from}~${s.to}: ${err.split('\n')[0]}`);
+        });
+      }
+      return out;
     }
 
     function renderHqSection() {
       const sec = document.createElement('div');
       sec.className = 'section';
       sec.id = 'hq-section';
-      const n = (STATE.hqSegments || []).length;
+      // 이 섹션은 **본사 근무만** — 점장 업무는 그 사람 줄(📋)에 붙어 있다(매장 근무의 일환).
+      const items = (STATE.hqSegments || []).map((s, idx) => ({ s, idx })).filter((x) => hqIsAway(x.s.kind));
       sec.innerHTML = `<div class="section-title">
         <span>🏢 본사 근무 (슈퍼바이징 · 푸드트럭)</span>
-        <span class="section-count">${n}건</span>
+        <span class="section-count">${items.length}건</span>
       </div>
       <div class="hq-note">이 시간은 <b>매장 인건비에서 빠져 본사로</b> 넘어갑니다. 급여는 그대로예요.</div>`;
       const list = document.createElement('div');
       list.className = 'emp-list';
-      (STATE.hqSegments || []).forEach((s, idx) => {
+      items.forEach(({ s, idx }) => {
         const r = document.createElement('div');
         r.className = 'support-row dir-out';
         const mins = (() => { const w = hqShiftWin(STATE.entries[s.id]);
@@ -1666,38 +1797,75 @@
       updateSummary();
     }
 
-    // ───────── 본사 근무 modal ─────────
-    let HQ_CTX = { id: null, from: '09:00', to: '18:00', kind: 'supervising' };
+    /** 직원 줄의 📋 점장 업무 칩 (SM·SV · 근무 ON 일 때만). 매장 근무의 일환이라 그 사람 줄에 붙인다. */
+    function dutyRowHtml(emp, ent) {
+      if (!HQ_DUTY_GRADES.includes(emp.grade) || !ent.on) return '';
+      const mine = (STATE.hqSegments || []).map((s, idx) => ({ s, idx }))
+        .filter((x) => x.s.id === emp.id && !hqIsAway(x.s.kind));
+      const chips = mine.map(({ s, idx }) =>
+        `<span class="duty-chip">${s.from}~${s.to}<b onclick="removeHq(${idx})" title="지우기">✕</b></span>`).join('');
+      return `<div class="duty-row" title="점장 업무 — 매장 근무의 일환. 인건비율은 바뀌지 않고, 본사가 통화 가능 시간을 볼 때 씁니다">`
+        + `<span class="duty-label">📋 점장 업무</span>${chips}`
+        + `<span class="duty-add" onclick="openHqModal({ id: '${emp.id}', kind: 'manager_duty', lock: true })">+ 추가</span></div>`;
+    }
 
-    function openHqModal() {
-      const cands = STATE.employees.filter((e) => {
-        const t = STATE.entries[e.id];
-        return t && t.on && t.in && t.out;
-      });
+    // ───────── 본사 근무 · 점장 업무 modal ─────────
+    //   HQ_CTX.lock = 직원·종류 고정(📋 점장 업무 칩에서 열었을 때)
+    //   HQ_CTX.wk   = {date, empId} — 주간 입력에서 열었을 때(그 날짜·그 직원의 WEEK_EDITS 에 넣는다)
+    let HQ_CTX = { id: null, from: '09:00', to: '18:00', kind: 'supervising', lock: false, wk: null };
+
+    function hqCtxEntry(id) {
+      return HQ_CTX.wk ? wkEntry(HQ_CTX.wk.date, id) : STATE.entries[id];
+    }
+    function hqCtxMine(id) {
+      if (HQ_CTX.wk) return (wkEntry(HQ_CTX.wk.date, id).segs || []).slice();
+      return (STATE.hqSegments || []).filter((s) => s.id === id);
+    }
+    function hqCandidates() {
+      const pool = HQ_CTX.wk ? STATE.employees.filter((e) => e.id === HQ_CTX.wk.empId) : STATE.employees;
+      return pool.filter((e) => { const t = hqCtxEntry(e.id); return t && t.on && t.in && t.out; });
+    }
+    function openHqModal(opts) {
+      opts = opts || {};
+      HQ_CTX = { id: opts.id || null, from: null, to: null,
+                 kind: opts.kind || 'supervising', lock: !!opts.lock, wk: opts.wk || null };
+      const cands = hqCandidates();
       if (!cands.length) {
-        say('본사 근무를 넣을 직원이 없습니다.\n먼저 그 직원의 출근/퇴근 시간을 입력해주세요.');
+        say((HQ_CTX.kind === 'manager_duty' ? '점장 업무' : '본사 근무') + '를 넣을 직원이 없습니다.\n먼저 그 직원의 출근/퇴근 시간을 입력해주세요.');
         return;
       }
-      HQ_CTX = { id: cands[0].id, from: null, to: null, kind: 'supervising' };
+      if (!cands.some((e) => e.id === HQ_CTX.id)) HQ_CTX.id = cands[0].id;
       renderHqModal();
       document.getElementById('hq-modal').classList.add('show');
     }
     function closeHqModal() { document.getElementById('hq-modal').classList.remove('show'); }
 
     function renderHqModal() {
-      const cands = STATE.employees.filter((e) => {
-        const t = STATE.entries[e.id];
-        return t && t.on && t.in && t.out;
-      });
+      const cands = hqCandidates();
       if (!cands.some((e) => e.id === HQ_CTX.id)) HQ_CTX.id = cands[0] && cands[0].id;
-      const ent = STATE.entries[HQ_CTX.id] || {};
+      const ent = hqCtxEntry(HQ_CTX.id) || {};
+      const emp = STATE.employees.find((e) => e.id === HQ_CTX.id) || {};
+      const duty = !hqIsAway(HQ_CTX.kind);
+      document.getElementById('hq-title').textContent = duty ? '📋 점장 업무 시간' : '🏢 본사 근무 추가';
+      document.getElementById('hq-sub').textContent = duty
+        ? '매장 근무의 일환입니다 — 인건비율은 바뀌지 않아요. 본사가 통화 가능 시간을 볼 때 씁니다.'
+        : '이 시간은 매장 인건비에서 빠져 본사로 넘어갑니다';
       // 시각 기본값은 그 사람 출퇴근 — 범위 밖을 고를 일이 줄어든다
       if (!HQ_CTX.from) HQ_CTX.from = ent.in || '09:00';
       if (!HQ_CTX.to) HQ_CTX.to = ent.out || '18:00';
-      document.getElementById('hq-emp').innerHTML = cands
-        .map((e) => `<option value="${e.id}"${e.id === HQ_CTX.id ? ' selected' : ''}>${e.name} (${e.grade}) ${STATE.entries[e.id].in}~${STATE.entries[e.id].out}</option>`)
+      const empSel = document.getElementById('hq-emp');
+      empSel.style.display = HQ_CTX.lock ? 'none' : '';
+      empSel.innerHTML = cands
+        .map((e) => `<option value="${e.id}"${e.id === HQ_CTX.id ? ' selected' : ''}>${e.label || e.name} (${e.grade}) ${hqCtxEntry(e.id).in}~${hqCtxEntry(e.id).out}</option>`)
         .join('');
-      document.getElementById('hq-kinds').innerHTML = HQ_KINDS
+      const fixed = document.getElementById('hq-fixed');
+      fixed.style.display = HQ_CTX.lock ? '' : 'none';
+      fixed.textContent = HQ_CTX.lock ? `${emp.label || emp.name || ''} (${emp.grade || ''})${HQ_CTX.wk ? ' · ' + HQ_CTX.wk.date.slice(5).replace('-', '/') : ''}` : '';
+      // 종류 — 본사 근무 모달에서는 본사 3종만. 점장 업무는 📋 칩에서만 열리고 종류가 고정된다.
+      const kindsRow = document.getElementById('hq-kinds');
+      kindsRow.style.display = duty ? 'none' : '';
+      document.getElementById('hq-kinds-label').style.display = duty ? 'none' : '';
+      kindsRow.innerHTML = HQ_AWAY_KINDS
         .map(([k, label]) => `<div class="half-chip${HQ_CTX.kind === k ? ' active' : ''}" onclick="hqSetKind('${k}')">${label}</div>`)
         .join('');
       // 시각은 네이티브 time 입력을 쓴다 — 기존 출퇴근 피커(TM_CTX)를 건드리지 않아
@@ -1705,8 +1873,9 @@
       document.getElementById('hq-from').value = HQ_CTX.from;
       document.getElementById('hq-to').value = HQ_CTX.to;
       document.getElementById('hq-note-row').style.display = HQ_CTX.kind === 'other' ? '' : 'none';
-      document.getElementById('hq-range').textContent =
-        ent.in ? `그 직원 근무: ${ent.in} ~ ${ent.out}` : '';
+      document.getElementById('hq-range').textContent = ent.in
+        ? `근무 ${ent.in} ~ ${ent.out}` + (ent.break_start && ent.break_end ? ` · 휴게 ${ent.break_start}~${ent.break_end} (겹치면 안 돼요)` : '')
+        : '';
     }
     function hqSetEmp(id) { HQ_CTX.id = id; HQ_CTX.from = null; HQ_CTX.to = null; renderHqModal(); }
     function hqSetKind(k) {
@@ -1721,15 +1890,22 @@
       HQ_CTX.from = document.getElementById('hq-from').value;
       HQ_CTX.to = document.getElementById('hq-to').value;
       const emp = STATE.employees.find((e) => e.id === HQ_CTX.id);
-      const err = hqValidate(HQ_CTX.id, HQ_CTX.from, HQ_CTX.to, HQ_CTX.kind, note, -1);
+      const err = hqValidateCore(hqCtxEntry(HQ_CTX.id), emp, hqCtxMine(HQ_CTX.id),
+                                 HQ_CTX.from, HQ_CTX.to, HQ_CTX.kind, note);
       if (err) { say(err); return; }
-      STATE.hqSegments.push({ id: HQ_CTX.id, name: emp ? emp.name : '',
-                             from: HQ_CTX.from, to: HQ_CTX.to,
-                             kind: HQ_CTX.kind, note: HQ_CTX.kind === 'other' ? note : null });
+      const seg = { id: HQ_CTX.id, name: emp ? emp.name : '', from: HQ_CTX.from, to: HQ_CTX.to,
+                    kind: HQ_CTX.kind, note: HQ_CTX.kind === 'other' ? note : null };
+      if (HQ_CTX.wk) {
+        wkEdit(HQ_CTX.wk.date, HQ_CTX.id).segs.push(seg);
+        closeHqModal();
+        renderWInput();
+        return;
+      }
+      STATE.hqSegments.push(seg);
       closeHqModal();
       renderMain();
       updateSummary();
-      scrollToEl('hq-section');
+      scrollToEl(hqIsAway(seg.kind) ? 'hq-section' : 'emp-row-' + seg.id);
     }
 
     function renderSupportSection() {
@@ -2324,17 +2500,7 @@
 
     /** 지금 입력 중인 지원 시간 {empId: 시간} — 지원은 방향과 무관하게 실근무다.
      *  STATE.supportEntries 는 언제나 선택된 날짜(STATE.date)의 것이다. */
-    function supportHoursToday() {
-      const out = {};
-      for (const sp of (STATE.supportEntries || [])) {
-        const h = Number(sp.hours || 0);
-        if (!(h > 0)) continue;
-        const emp = STATE.employees.find(e => (e.name || '') === (sp.name || ''));
-        if (!emp) continue;                 // 남의 매장 직원(지원왔음) — 우리 주 합계 대상 아님
-        out[emp.id] = (out[emp.id] || 0) + h;
-      }
-      return out;
-    }
+    function supportHoursToday() { return supportHoursOf(STATE.supportEntries || []); }
 
     /** 그 주 이 직원의 **타매장** 근무시간 — 우리가 손댈 수 없는 부분. */
     function otherWeekHoursFor(empId, weekStart) {
@@ -2420,8 +2586,11 @@
 
     /** 이 날짜 입력분의 예상 인건비 — 정직원 고정일급 + 크루 시간×시급.
      *  연장·야간·공휴 가산은 빼고 본다(봇이 최종 계산한다) — 그래서 '예상'이다. */
-    function estDayLabor(entryOf, dateStr) {
+    function estDayLabor(entryOf, dateStr, segsOf) {
       const md = monthWeekdays(dateStr);
+      // 🏢 본사 근무 시간은 매장 인건비가 아니다 — 봇(split_amount)과 같은 비율로 뺀다.
+      //   점장 업무는 awayMinutesOf 가 세지 않으므로 여기서도 자연히 빠지지 않는다(인건비 변동 없음).
+      segsOf = segsOf || ((id) => hqSegmentsOn(dateStr).filter((x) => x.id === id));
       let sum = 0;
       for (const emp of STATE.employees) {
         if (STATE.deletedEmployees.includes(emp.id)) continue;
@@ -2429,7 +2598,9 @@
         if (!(e && e.on && e.in && e.out)) continue;
         const h = calcWork(e.in, e.out, e.breakH || 0);
         if (!(h > 0)) continue;
-        const factor = e.half ? 0.5 : 1;
+        const awayMin = awayMinutesOf(e, segsOf(emp.id) || []);
+        const workMin = Math.round(h * 60);
+        const factor = (e.half ? 0.5 : 1) * (awayMin > 0 && workMin > 0 ? Math.max(0, 1 - Math.min(awayMin, workMin) / workMin) : 1);
         // 봇 payload 의 키는 emp.rate(통상시급) · emp.grade 다. 정직원 여부는 grade 로 가른다
         // — payload 에 full_time 같은 필드는 없다(build_miniapp_url 참고).
         const rate = Number(emp.rate || 0);
@@ -2687,6 +2858,7 @@
             <div class="work-hours ${incomplete ? 'warn' : ''}">${workStr}</div>
           </div>
           <div class="half-row">${emp.grade !== 'Crew' ? `<div class="half-chip${ent.half ? ' active' : ''}" onclick="toggleHalf('${emp.id}')">${ent.half ? '✓ 반차 (0.5일)' : '☐ 반차 (절반 근무)'}</div>` : ''}${isOfficialHoliday() ? `<div class="half-chip active" style="margin-left:6px;pointer-events:none">🎌 지정 공휴일 (자동)</div>` : `<div class="half-chip hol-chip${ent.hol ? ' active' : ''}" onclick="toggleHol('${emp.id}')" style="margin-left:6px">${ent.hol ? '✓ 🎌 공휴일 근무' : '☐ 🎌 공휴일 근무'}</div>`}</div>
+          ${dutyRowHtml(emp, ent)}
           ${dupNote}
         ` : (() => { const off = offLabelFor(emp.id); return `
           <div class="emp-time-row">
@@ -3366,12 +3538,29 @@
       document.getElementById('break-modal').classList.remove('show');
       BM_CTX = null;
     }
+    /** 휴게 모달이 겹침을 볼 그 사람 그날의 구간 목록. 지원 모달(__SUP__)엔 구간이 없다. */
+    function bmSegments() {
+      if (!BM_CTX) return [];
+      if (BM_CTX.empId === '__SUP__') return [];
+      if (BM_CTX.empId === '__WK__') return wkEntry(WK_CTX.date, WK_CTX.empId).segs || [];
+      return (STATE.hqSegments || []).filter((x) => x.id === BM_CTX.empId);
+    }
     function confirmBreakModal() {
       if (!BM_CTX) return;
       const ent = _tmEnt(BM_CTX.empId);
       const s = document.getElementById('bm-start').value;
       const e = document.getElementById('bm-end').value;
       if (timeToMin(e) <= timeToMin(s)) { say('휴게 종료 시각이 시작보다 늦어야 해요.'); return; }
+      // ★ 이미 넣은 본사 근무·점장 업무와 겹치는 휴게는 막는다 — 무엇과 언제 겹치는지 적어서.
+      //   (구간을 나중에 넣을 때는 hqValidateCore 가 같은 규칙으로 막는다 — 순서와 무관하게 겹친 채 저장되지 않는다)
+      {
+        const conf = hqBreakConflicts(s, e, ent, bmSegments());
+        if (conf.length) {
+          say('⛔ 휴게를 이 시간으로 둘 수 없습니다.\n\n' + conf.join('\n')
+            + '\n\n휴게를 다른 시간으로 옮기거나, 먼저 그 구간을 지운 뒤 다시 넣어주세요.');
+          return;
+        }
+      }
       ent.break_start = s; ent.break_end = e; ent.breakH = breakDurH(ent);
       if (BM_CTX.empId === '__SUP__') { renderSupScope(); } else if (BM_CTX.empId === '__WK__') { renderWInput(); } else { refreshRow(BM_CTX.empId); }
       closeBreakModal();
@@ -3640,6 +3829,16 @@
           + `• 우리 매장 근무가 맞다면 → 상대 매장에 기록 삭제를 요청한 뒤 저장하세요`);
         return;
       }
+      // 본사 근무·점장 업무가 근무·휴게와 맞는지 — 모달에서 막지만 그 뒤 출퇴근·휴게를 바꾸면 어긋난다.
+      {
+        const probs = hqSaveProblems(STATE.date.slice(5).replace('-', '/'), (id) => STATE.entries[id],
+                                     (id) => (STATE.hqSegments || []).filter((x) => x.id === id));
+        if (probs.length) {
+          say('⛔ 본사 근무·점장 업무 시간이 근무·휴게와 맞지 않아 저장할 수 없습니다:\n\n' + probs.join('\n')
+            + '\n\n출퇴근·휴게를 바꾼 뒤 구간이 밀려난 경우입니다. 구간을 다시 잡거나 지워주세요.');
+          return;
+        }
+      }
       // 주 52시간 초과 차단 — 봇도 같은 검사를 하지만, 여기서 먼저 막아야
       // 매니저가 전송 후에 거절당하는 왕복을 겪지 않는다.
       {
@@ -3823,16 +4022,19 @@
     const WEEK_EDITS = {};             // date → {empId: entry}
 
     function wkBaseEntry(dateStr, empId) {
+      // 부가행(segs·away)도 저장분에서 시드한다 — 없으면 주간 저장이 그 날짜 구간을 통째로 갈아치울 때
+      // 이 사람 것이 사라진다(wkSegmentsFor 는 편집 대상 직원의 목록을 그대로 믿는다).
+      const extras = { segs: wkSegSeed(dateStr, empId), away: wkAwaySeed(dateStr, empId) };
       if (dateStr === STATE.date) {
         const t = STATE.entries[empId];
-        return t ? { in: t.in, out: t.out, breakH: t.breakH || 0, break_start: t.break_start || null, break_end: t.break_end || null, half: !!t.half, hol: !!t.hol, leave: !!t.leave, on: !!t.on }
-                 : { in: null, out: null, breakH: 0, break_start: null, break_end: null, half: false, hol: false, leave: false, on: false };
+        return t ? { in: t.in, out: t.out, breakH: t.breakH || 0, break_start: t.break_start || null, break_end: t.break_end || null, half: !!t.half, hol: !!t.hol, leave: !!t.leave, on: !!t.on, ...extras }
+                 : { in: null, out: null, breakH: 0, break_start: null, break_end: null, half: false, hol: false, leave: false, on: false, ...extras };
       }
       const t = ((STATE.prev_by_date_emp || {})[dateStr] || {})[empId];
       return (t && t.in && t.out)
-        ? { in: t.in, out: t.out, breakH: t.breakH || 0, break_start: t.break_start || null, break_end: t.break_end || null, half: !!t.half, hol: !!t.hol, leave: false, on: true }
+        ? { in: t.in, out: t.out, breakH: t.breakH || 0, break_start: t.break_start || null, break_end: t.break_end || null, half: !!t.half, hol: !!t.hol, leave: false, on: true, ...extras }
         : { in: null, out: null, breakH: 0, break_start: null, break_end: null, half: false, hol: false,
-            leave: !!(((STATE.prev_leave_by_date || {})[dateStr] || {})[empId]), on: false };
+            leave: !!(((STATE.prev_leave_by_date || {})[dateStr] || {})[empId]), on: false, ...extras };
     }
     function wkEntry(dateStr, empId) { return (WEEK_EDITS[dateStr] || {})[empId] || wkBaseEntry(dateStr, empId); }
     function wkEdit(dateStr, empId) {
@@ -3840,7 +4042,7 @@
       if (!WEEK_EDITS[dateStr][empId]) WEEK_EDITS[dateStr][empId] = wkBaseEntry(dateStr, empId);
       return WEEK_EDITS[dateStr][empId];
     }
-    const _wkSig = (e) => JSON.stringify([!!e.on && !!e.in && !!e.out, e.in || '', e.out || '', Math.round((e.breakH || 0) * 10), e.break_start || '', e.break_end || '', !!e.half]);
+    const _wkSig = (e) => JSON.stringify([!!e.on && !!e.in && !!e.out, e.in || '', e.out || '', Math.round((e.breakH || 0) * 10), e.break_start || '', e.break_end || '', !!e.half, _wkExtraSig(e)]);
     function wkDirtyDates() {
       return Object.keys(WEEK_EDITS)
         .filter(d => Object.entries(WEEK_EDITS[d]).some(([id, e]) => _wkSig(e) !== _wkSig(wkBaseEntry(d, id))))
@@ -3928,6 +4130,8 @@
           h += `<button type="button" class="wk-mini${e.leave ? ' on-leave' : ''}" onclick="wkToggleLeave('${d}')" title="연차 사용">🏖연차</button>`;
         }
         h += `</div>`;
+        // 부가행 — 🏢 본사 근무 · 📋 점장 업무(SM·SV) · 🔄 다른 매장 근무. 하루에 두 매장이면 여기 한 줄.
+        h += wkExtrasHtml(d, e, wkEmp);
       });
       h += `<div class="wk-actions">`
          + `<button type="button" class="wk-act" onclick="wkCopyPrevWeek()">🔁 전주 복사</button>`
@@ -3986,10 +4190,183 @@
         Object.assign(e, { in: src.in, out: src.out, breakH: src.breakH || 0,
                            break_start: src.break_start || null, break_end: src.break_end || null,
                            half: !!src.half, hol: false, leave: false,   // 공휴·연차는 날짜 속성 — 전주 복사 제외
-                           on: !!(src.on && src.in && src.out) });
+                           on: !!(src.on && src.in && src.out),
+                           // 본사 근무·점장 업무는 주 단위 패턴이라 같이 복사한다. 다른 매장 근무(지원)는
+                           // 상대 매장과 맞춰야 하는 것이라 복사하지 않는다 — 그 주에 다시 넣는다.
+                           segs: (src.segs || []).map((x) => ({ ...x })), away: [] });
       });
       renderWInput();
       say('전주 스케줄을 복사했습니다. 확인 후 [💾 주간 저장]을 눌러주세요.');
+    }
+
+    // ───────── 주간 입력 — 하루의 부가행: 🏢 본사 근무 · 📋 점장 업무 · 🔄 다른 매장 근무 (2026-09-07) ─────────
+    //   한 사람의 하루는 "우리 매장 근무" 하나로 끝나지 않는다. 오전엔 우리 매장, 오후엔 다른 매장(지원)일 수도
+    //   있고, 근무 중 일부가 본사 근무(슈퍼바이징)이거나 점장 업무일 수도 있다. 주간 입력에서도 이걸 넣을 수
+    //   있어야 매니저가 하루 입력으로 되돌아가지 않는다.
+    //   · segs = 그 사람 그날의 구간 [{from, to, kind, note}] — 하루 입력의 STATE.hqSegments 와 같은 모양
+    //   · away = 그 사람 그날의 '지원갔음' [{other_store, in, out, break_start, break_end, breakH, hours, half_day}]
+    //     — 하루 입력의 supportEntries(direction 'out') 와 같은 뜻. **하루에 두 매장** = 우리 매장 근무 + away 한 줄.
+    //       하루 통째로 다른 매장 = 우리 매장 휴무 + away 한 줄.
+    //   저장은 날짜 단위 통째 교체라, 그 날짜의 **다른 직원 것은 저장분 그대로** 실어 보내고 편집한 직원 것만
+    //   갈아 끼운다(wkSegmentsFor · wkSupportFor). 안 그러면 한 사람을 고치다 남의 구간이 지워진다.
+    function wkSegSeed(dateStr, empId) {
+      return hqSegmentsOn(dateStr).filter((s) => s.id === empId)
+        .map((s) => ({ from: s.from, to: s.to, kind: s.kind, note: s.note || null }));
+    }
+    function wkSupportBase(dateStr) {
+      return dateStr === STATE.date ? (STATE.supportEntries || []) : ((STATE.prev_support_by_date || {})[dateStr] || []);
+    }
+    /** 지원 행이 이 직원의 것인가 — id 로 견주고, id 가 없는 옛 행만 이름으로. */
+    function wkSupIsMine(sp, emp) {
+      if (sp.employee_id) return String(sp.employee_id) === String(emp.id);
+      return String(sp.name || '').trim() === String(emp.name || '').trim();
+    }
+    function wkAwaySeed(dateStr, empId) {
+      const emp = STATE.employees.find((e) => e.id === empId);
+      if (!emp) return [];
+      return wkSupportBase(dateStr).filter((sp) => sp.direction === 'out' && wkSupIsMine(sp, emp))
+        .map((sp) => ({ other_store: sp.other_store, in: sp.in || null, out: sp.out || null,
+                        break_start: sp.break_start || null, break_end: sp.break_end || null,
+                        breakH: sp.breakH || 0, hours: sp.hours || 0, half_day: !!sp.half_day }));
+    }
+    const _wkExtraSig = (e) => JSON.stringify([
+      (e.segs || []).map((s) => [s.kind, s.from, s.to, s.note || '']).sort(),
+      (e.away || []).map((a) => [a.other_store, a.in || '', a.out || '', a.break_start || '', a.break_end || '', !!a.half_day]).sort(),
+    ]);
+
+    /** 그 날짜의 hq_segments payload — 저장분(다른 직원 포함) 위에 편집한 직원 것만 갈아 끼운다. */
+    function wkSegmentsFor(dateStr) {
+      const edits = WEEK_EDITS[dateStr] || {};
+      const editedIds = new Set(Object.keys(edits).filter((id) => Array.isArray(edits[id].segs)));
+      const base = hqSegmentsOn(dateStr).filter((s) => !editedIds.has(String(s.id)))
+        .map((s) => ({ id: s.id, name: s.name, from: s.from, to: s.to, kind: s.kind, note: s.note || null }));
+      editedIds.forEach((id) => {
+        const emp = STATE.employees.find((e) => e.id === id);
+        (edits[id].segs || []).forEach((s) => base.push({ id, name: emp ? emp.name : '',
+          from: s.from, to: s.to, kind: s.kind, note: s.note || null }));
+      });
+      return base;
+    }
+    /** 그 날짜의 support_entries payload — 편집한 직원의 '지원갔음'만 갈아 끼운다(지원왔음·남의 것은 그대로). */
+    function wkSupportFor(dateStr) {
+      const edits = WEEK_EDITS[dateStr] || {};
+      const editedEmps = Object.keys(edits).filter((id) => Array.isArray(edits[id].away))
+        .map((id) => STATE.employees.find((e) => e.id === id)).filter(Boolean);
+      const base = wkSupportBase(dateStr)
+        .filter((sp) => !(sp.direction === 'out' && editedEmps.some((emp) => wkSupIsMine(sp, emp))))
+        .map((sp) => ({ direction: sp.direction, other_store: sp.other_store, name: sp.name,
+                        employee_id: sp.employee_id || null, grade: sp.grade, half_day: !!sp.half_day,
+                        hours: sp.hours, in: sp.in, out: sp.out, breakH: sp.breakH,
+                        break_start: sp.break_start || null, break_end: sp.break_end || null }));
+      editedEmps.forEach((emp) => {
+        (edits[emp.id].away || []).forEach((a) => base.push({
+          direction: 'out', other_store: a.other_store, name: emp.name, employee_id: emp.id,
+          grade: emp.grade, half_day: emp.grade !== 'Crew' ? !!a.half_day : false,
+          hours: a.hours, in: a.in, out: a.out, breakH: a.breakH || 0,
+          break_start: a.break_start || null, break_end: a.break_end || null }));
+      });
+      return base;
+    }
+    /** 지원 목록에서 우리 직원별 시간 {empId: h} — 지원은 방향과 무관하게 실근무다. */
+    function supportHoursOf(list) {
+      const out = {};
+      for (const sp of (list || [])) {
+        const h = Number(sp.hours || 0);
+        if (!(h > 0)) continue;
+        const emp = STATE.employees.find((e) => wkSupIsMine(sp, e));
+        if (!emp) continue;                 // 남의 매장 직원(지원왔음) — 우리 주 합계 대상 아님
+        out[emp.id] = (out[emp.id] || 0) + h;
+      }
+      return out;
+    }
+    /** 부가행 한 줄의 HTML — 근무일엔 구간·지원 칩과 추가 버튼, 휴무일엔 지원(다른 매장)만. */
+    function wkExtrasHtml(d, e, emp) {
+      const on = e.on && e.in && e.out;
+      const chips = [];
+      (e.segs || []).forEach((s, i) => chips.push(
+        `<span class="wk-seg${hqIsAway(s.kind) ? ' away' : ' duty'}" title="${hqGroupLabel(s.kind)} · ${hqKindLabel(s.kind)}${s.note ? ' · ' + h_esc(s.note) : ''}">`
+        + `${hqIcon(s.kind)} ${hqIsAway(s.kind) ? hqKindLabel(s.kind) + ' ' : ''}${s.from}~${s.to}`
+        + `<b onclick="wkRemoveSeg('${d}', ${i})" title="지우기">✕</b></span>`));
+      (e.away || []).forEach((a, i) => chips.push(
+        `<span class="wk-seg other" title="다른 매장 근무(지원갔음) · ${(a.hours || 0).toFixed(1)}h">`
+        + `🔄 ${h_esc(a.other_store)} ${a.in || '?'}~${a.out || '?'}`
+        + `<b onclick="wkRemoveAway('${d}', ${i})" title="지우기">✕</b></span>`));
+      const adds = [];
+      if (on) adds.push(`<span class="wk-add" onclick="wkAddSeg('${d}', 'supervising')" title="본사 근무 — 매장 인건비에서 빠져 본사로">+🏢 본사</span>`);
+      if (on && HQ_DUTY_GRADES.includes(emp && emp.grade)) adds.push(`<span class="wk-add" onclick="wkAddSeg('${d}', 'manager_duty')" title="점장 업무 — 매장 근무의 일환, 인건비 변동 없음">+📋 점장</span>`);
+      adds.push(`<span class="wk-add" onclick="wkOpenAway('${d}')" title="다른 매장 근무(지원) — 하루 통째로도, 우리 매장 근무와 나눠서도">+🔄 다른 매장</span>`);
+      return `<div class="wk-sub">${chips.join('')}${adds.join('')}</div>`;
+    }
+    function wkAddSeg(d, kind) {
+      const e = wkEntry(d, WK_EMP);
+      if (!(e.on && e.in && e.out)) { say('먼저 그 날 근무(출퇴근)를 넣어주세요.'); return; }
+      wkEdit(d, WK_EMP);
+      openHqModal({ id: WK_EMP, kind, lock: kind === 'manager_duty', wk: { date: d, empId: WK_EMP } });
+    }
+    function wkRemoveSeg(d, i) { wkEdit(d, WK_EMP).segs.splice(i, 1); renderWInput(); }
+    function wkRemoveAway(d, i) { wkEdit(d, WK_EMP).away.splice(i, 1); renderWInput(); }
+
+    // ── 🔄 다른 매장 근무 (지원갔음) 모달 — 주간 입력 전용. 하루 입력의 지원 모달은 방향·직원 선택까지
+    //    있어 무겁다. 여기서는 직원이 이미 정해져 있으니 매장·시각만 받는다.
+    let WKA_CTX = null;   // {date, empId}
+    function wkOpenAway(d) {
+      WKA_CTX = { date: d, empId: WK_EMP };
+      wkEdit(d, WK_EMP);
+      const emp = STATE.employees.find((x) => x.id === WK_EMP) || {};
+      const e = wkEntry(d, WK_EMP);
+      const sel = document.getElementById('wka-store');
+      sel.innerHTML = '<option value="">매장 선택</option>'
+        + Object.keys(STATE.all_stores || {}).filter((s) => s !== STATE.store)
+            .map((s) => `<option value="${h_esc(s)}">${h_esc(s)}</option>`).join('');
+      document.getElementById('wka-sub').textContent = `${emp.label || emp.name || ''} · ${d.slice(5).replace('-', '/')}`
+        + ((e.on && e.in && e.out) ? ` · 우리 매장 근무 ${e.in}~${e.out} (겹치면 안 돼요)` : ' · 이 날 우리 매장은 휴무');
+      document.getElementById('wka-from').value = (e.on && e.out) ? e.out : '09:00';
+      document.getElementById('wka-to').value = (e.on && e.out) ? minToTime(Math.min(timeToMin(e.out) + 240, 1439)) : '18:00';
+      document.getElementById('wka-nobreak').checked = false;
+      document.getElementById('wka-half').style.display = emp.grade !== 'Crew' ? '' : 'none';
+      document.getElementById('wka-half-chk').checked = false;
+      document.getElementById('wk-away-modal').classList.add('show');
+    }
+    function closeWkAwayModal() { document.getElementById('wk-away-modal').classList.remove('show'); WKA_CTX = null; }
+    /** 다른 매장 근무 한 줄의 검증 — 통과하면 null. 우리 매장 근무·다른 지원과 겹치면 무엇과 겹치는지 적는다. */
+    function wkAwayValidate(e, others, store, frm, to) {
+      if (!store) return '매장을 선택해주세요.';
+      const a = timeToMin(frm), b = timeToMin(to);
+      if (a == null || b == null) return '시각을 선택해주세요.';
+      if (b <= a) return '종료 시각이 시작보다 늦어야 합니다. (자정을 넘기는 근무는 입력하지 않습니다)';
+      if (e.on && e.in && e.out) {
+        const mi = timeToMin(e.in), mo = timeToMin(e.out);
+        if (Math.max(0, Math.min(mo, b) - Math.max(mi, a)) > 0) {
+          return `우리 매장 근무 ${e.in}~${e.out} 와 ${store} ${frm}~${to} 이(가) 겹칩니다.\n\n`
+            + '한 사람이 같은 시간에 두 매장에서 근무할 수는 없습니다. 우리 매장 근무 시간을 줄이거나 다른 매장 시간을 조정해주세요.';
+        }
+      }
+      for (const o of (others || [])) {
+        const oa = timeToMin(o.in), ob = timeToMin(o.out);
+        if (oa != null && ob != null && Math.max(0, Math.min(ob, b) - Math.max(oa, a)) > 0) {
+          return `이미 넣은 ${o.other_store} ${o.in}~${o.out} 와 ${store} ${frm}~${to} 이(가) 겹칩니다.`;
+        }
+      }
+      return null;
+    }
+    function confirmWkAway() {
+      if (!WKA_CTX) return;
+      const e = wkEdit(WKA_CTX.date, WKA_CTX.empId);
+      const emp = STATE.employees.find((x) => x.id === WKA_CTX.empId) || {};
+      const store = document.getElementById('wka-store').value;
+      const frm = document.getElementById('wka-from').value, to = document.getElementById('wka-to').value;
+      const err = wkAwayValidate(e, e.away || [], store, frm, to);
+      if (err) { say(err); return; }
+      const noBreak = document.getElementById('wka-nobreak').checked;
+      const w = noBreak ? { start: null, end: null } : autoBreakWindow(frm, to);
+      const breakH = (w.start && w.end) ? (timeToMin(w.end) - timeToMin(w.start)) / 60 : 0;
+      const hours = calcWork(frm, to, breakH);
+      if (!(hours > 0)) { say('근무 시간이 0입니다. 시각을 확인해주세요.'); return; }
+      e.away = e.away || [];
+      e.away.push({ other_store: store, in: frm, out: to, break_start: w.start, break_end: w.end, breakH, hours,
+                    half_day: emp.grade !== 'Crew' && document.getElementById('wka-half-chk').checked });
+      closeWkAwayModal();
+      renderWInput();
     }
 
     function wkSave() {
@@ -4017,6 +4394,27 @@
       }
       // 주 52시간 초과 차단 — 저장할 날을 **한 번에** 본다. 하루씩 보면 앞의 날은 저장되고
       // 뒤의 날만 막혀 반쪽만 들어간다. (WEEK_EDITS 는 주를 넘나들 수 있어 주별로 판정한다.)
+      // 본사 근무·점장 업무가 근무·휴게와 맞는지, 다른 매장 근무가 우리 근무와 겹치지 않는지 — 모달에서
+      // 막지만 그 뒤 출퇴근·휴게를 바꾸면 어긋날 수 있다. 저장 직전에 한 번 더 본다.
+      {
+        const probs = [];
+        dirty.forEach(d => {
+          const dl = d.slice(5).replace('-', '/');
+          probs.push(...hqSaveProblems(dl, (id) => wkEntry(d, id), (id) => (wkEntry(d, id).segs || [])));
+          STATE.employees.forEach(emp => {
+            const e = wkEntry(d, emp.id);
+            (e.away || []).forEach((a, i) => {
+              const err = wkAwayValidate(e, (e.away || []).filter((_, j) => j !== i), a.other_store, a.in, a.out);
+              if (err) probs.push(`• ${dl} ${emp.label || emp.name} — 🔄 ${a.other_store} ${a.in}~${a.out}: ${err.split('\n')[0]}`);
+            });
+          });
+        });
+        if (probs.length) {
+          say('⛔ 근무·휴게와 맞지 않는 항목이 있어 저장할 수 없습니다:\n\n' + probs.join('\n')
+            + '\n\n출퇴근·휴게를 바꾼 뒤 구간이 밀려난 경우입니다. 해당 날짜의 구간을 다시 잡거나 지워주세요.');
+          return;
+        }
+      }
       {
         const byDate = {};
         dirty.forEach(d => {
@@ -4025,10 +4423,9 @@
             const e = wkEntry(d, emp.id);
             byDate[d][emp.id] = (e.on && e.in && e.out) ? calcWork(e.in, e.out, e.breakH || 0) : 0;
           });
-          if (d === STATE.date) {
-            for (const [id, h] of Object.entries(supportHoursToday())) {
-              byDate[d][id] = (byDate[d][id] || 0) + h;
-            }
+          // 지원(다른 매장 근무)도 그 사람의 실근무다 — 이번 저장에 실릴 목록(편집분 반영) 기준
+          for (const [id, h] of Object.entries(supportHoursOf(wkSupportFor(d)))) {
+            byDate[d][id] = (byDate[d][id] || 0) + h;
           }
         });
         const missWk = [];
@@ -4043,7 +4440,7 @@
       const askRatio = () => {
         const ds = weekDates();
         const ov = {};
-        ds.forEach(d => { ov[d] = estDayLabor((id) => wkEntry(d, id), d); });
+        ds.forEach(d => { ov[d] = estDayLabor((id) => wkEntry(d, id), d, (id) => (wkEntry(d, id).segs || [])); });
         return askRatioBeforeSave(ds[0], ov, () => sendWeekPayload(dirty));
       };
       // 지원 근무는 **오늘 날짜만** 화면값으로 교체된다(그 외 날짜는 저장분을 그대로
@@ -4070,13 +4467,11 @@
                    holiday_note: (on && e.hol) ? (e.holNote || null) : null,
                    leave: on ? false : !!e.leave };
         });
-        const support = d === STATE.date ? (STATE.supportEntries || []).slice()
-          : ((STATE.prev_support_by_date || {})[d] || []).map(s => ({
-              direction: s.direction, other_store: s.other_store, name: s.name, grade: s.grade,
-              hours: s.hours, in: s.in, out: s.out, breakH: s.breakH,
-              break_start: s.break_start || null, break_end: s.break_end || null }));
+        // 지원·구간은 그 날짜 저장분 위에 편집한 직원 것만 갈아 끼운 목록이다(남의 것은 그대로).
+        //   hq_segments 키가 **있어야** 봇이 그 날짜 구간을 이 목록으로 교체한다 — 없으면 보존한다.
         return { date: d, base_version: (STATE.prev_versions || {})[d] ?? 'EMPTY',
-                 entries, support_entries: support, new_employees: [], deleted_employees: [] };
+                 entries, support_entries: wkSupportFor(d), hq_segments: wkSegmentsFor(d),
+                 new_employees: [], deleted_employees: [] };
       });
       let payload;
       try {
@@ -4114,7 +4509,8 @@
       }));
       const label = `${ds[0].slice(5).replace('-', '/')} ~ ${ds[6].slice(5).replace('-', '/')}`;
       let h = `<div class="av-nav"><button type="button" onclick="navWeek(-1)">‹</button><b>📆 주간표 ${label}</b><button type="button" onclick="navWeek(1)">›</button></div>`;
-      h += `<div class="av-note">저장된 스케줄 기준 (오늘 날짜는 입력 중인 값 반영) · 최근 3개월 조회 가능${extras.size ? ' · ※ = 현재 명단 외(퇴사·이동)' : ''}${supRows.size ? ' · (지원) = 타 매장에서 지원' : ''}</div>`;
+      const anySeg = ds.some((d) => hqSegmentsOn(d).length > 0);
+      h += `<div class="av-note">저장된 스케줄 기준 (오늘 날짜는 입력 중인 값 반영) · 최근 3개월 조회 가능${extras.size ? ' · ※ = 현재 명단 외(퇴사·이동)' : ''}${supRows.size ? ' · (지원) = 타 매장에서 지원' : ''}${anySeg ? ' · 🏢 = 본사 근무 · 📋 = 점장 업무 (칸을 길게 누르면 시각)' : ''}</div>`;
       const dayMaps = ds.map(d => { const m = {}; dayOwn(d).forEach(o => { m[o.id] = o; }); return m; });
 
       // 예상 인건비율 — 매장 전체 × 요일이라 이 화면이 제자리다.
@@ -4158,8 +4554,13 @@
           if (o) {
             // 지정 공휴일인 날은 개별 🎌 를 붙이지 않는다 (머리행에 이미 표시)
             const hol = !!o.hol && !isOfficialHoliday(d);
-            const mk = (o.half ? '반차' : '') + (o.half && hol ? '·' : '') + (hol ? '🎌' : '');
-            return `<td>${o.in}<br>${o.out}${mk ? `<br><span class="mk">${mk}</span>` : ''}</td>`;
+            // 🏢 본사 근무 · 📋 점장 업무 — 저장분(오늘은 화면값). 시각은 툴팁에.
+            const segs = hqSegmentsOn(d).filter((s) => s.id === e.id);
+            const away = segs.filter((s) => hqIsAway(s.kind)), duty = segs.filter((s) => !hqIsAway(s.kind));
+            const segMk = (away.length ? '🏢' : '') + (duty.length ? '📋' : '');
+            const segTip = segs.map((s) => `${hqIcon(s.kind)} ${hqKindLabel(s.kind)} ${s.from}~${s.to}`).join(' · ');
+            const mk = (o.half ? '반차' : '') + (o.half && hol ? '·' : '') + (hol ? '🎌' : '') + segMk;
+            return `<td${segTip ? ` title="${h_esc(segTip)}"` : ''}>${o.in}<br>${o.out}${mk ? `<br><span class="mk">${mk}</span>` : ''}</td>`;
           }
           return dayLeave(d, e.id) ? '<td class="lv">연차</td>' : '<td class="off">—</td>';
         }).join('');
