@@ -294,13 +294,30 @@
     .modal-actions {
       display: flex; gap: 8px; margin-top: 20px;
     }
+    /* ★ 색이 없는 modal-btn 을 만들지 않는다 (2026-09-09 다순님).
+       종전엔 modifier(primary/secondary)가 없으면 background 를 아무도 안 정해 **브라우저 기본
+       회색**이 나왔다. 그 회색이 취소(.secondary, #f1f1f4)와 거의 같아, 나란히 둔 [취소][추가]가
+       똑같은 회색 두 개로 보였다 — 어느 쪽이 실행인지 눌러 봐야 아는 상태였다.
+       기본값을 primary 색으로 둬서, 앞으로 클래스를 빠뜨려도 실행 버튼은 파랗게 나온다. */
     .modal-btn {
-      flex: 1; padding: 12px; border: none; border-radius: 10px;
+      flex: 1; padding: 12px; border: 1px solid transparent; border-radius: 10px;
       font-size: 15px; font-weight: 600; cursor: pointer; min-height: 44px;
+      background: var(--btn); color: var(--btn-text);
+      transition: filter .12s ease, transform .06s ease;
     }
     .modal-btn.primary { background: var(--btn); color: var(--btn-text); }
-    .modal-btn.secondary { background: var(--secondary-bg); color: var(--text); }
-    .modal-btn.destructive { background: rgba(255,59,48,0.15); color: var(--destructive); }
+    /* 취소 = 테두리로 '버튼'임을 알리고, 굵기를 낮춰 파란 실행 버튼에 시선을 양보한다.
+       배경색만으로는 흰 모달 위에서 버튼 경계가 안 보였다. */
+    .modal-btn.secondary {
+      background: var(--secondary-bg); color: var(--text);
+      border-color: rgba(127,127,127,0.35); font-weight: 500;
+    }
+    /* 되돌릴 수 없는 실행(직원 삭제) — 실행 자리·실행 모양이 파란 버튼과 같으면 습관대로 눌린다. */
+    .modal-btn.destructive {
+      background: var(--destructive); color: #fff; border-color: var(--destructive);
+    }
+    /* 눌리는 느낌 — 모달 버튼은 저장·삭제로 이어지는 자리라 반응이 있어야 두 번 누르지 않는다. */
+    .modal-btn:active { filter: brightness(0.92); transform: translateY(1px); }
 
     /* Quick chips */
     .quick-chips {
@@ -881,7 +898,7 @@
 
       <div class="modal-actions">
         <button class="modal-btn secondary" onclick="closeHqModal()">취소</button>
-        <button class="modal-btn" onclick="confirmHq()">추가</button>
+        <button class="modal-btn primary" onclick="confirmHq()">추가</button>
       </div>
     </div>
   </div>
@@ -907,7 +924,7 @@
 
       <div class="modal-actions">
         <button class="modal-btn secondary" onclick="closeWkAwayModal()">취소</button>
-        <button class="modal-btn" onclick="confirmWkAway()">추가</button>
+        <button class="modal-btn primary" onclick="confirmWkAway()">추가</button>
       </div>
     </div>
   </div>
@@ -923,7 +940,7 @@
                 placeholder="예) 대체 휴무일 근무 · 창립기념일 근무"></textarea>
       <div class="modal-actions">
         <button class="modal-btn secondary" onclick="closeHolModal()">취소</button>
-        <button class="modal-btn" id="hol-ok" onclick="confirmHolReason()">지정</button>
+        <button class="modal-btn primary" id="hol-ok" onclick="confirmHolReason()">지정</button>
       </div>
     </div>
   </div>
@@ -1104,7 +1121,7 @@
 
       <div class="modal-actions">
         <button class="modal-btn secondary" onclick="closeDeleteModal()">취소</button>
-        <button class="modal-btn primary" onclick="confirmEmpDelete()">삭제</button>
+        <button class="modal-btn destructive" onclick="confirmEmpDelete()">삭제</button>
       </div>
     </div>
   </div>
