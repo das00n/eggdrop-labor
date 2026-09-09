@@ -1682,7 +1682,7 @@
      *   ent = 그날 근무(in/out/break_start/break_end) · emp = 직원(직급) · mine = 그 사람의 기존 구간
      *   (자기 자신은 빼고 넘긴다). 봇 offsite.validate_segments 와 같은 규칙·같은 문구 뼈대.
      */
-    function hqValidateCore(ent, emp, mine, frm, to, kind, note) {
+    function hqValidateSegment(ent, emp, mine, frm, to, kind, note) {
       if (!ent || !ent.on || !ent.in || !ent.out) return '그 직원은 이 날 근무(출퇴근) 기록이 없습니다.';
       if (!HQ_KINDS.some((x) => x[0] === kind)) return '종류를 선택해주세요.';
       const glabel = hqGroupLabel(kind);
@@ -1722,11 +1722,17 @@
       }
       return null;
     }
+    /** 구간 하나 + 그 구간까지 넣었을 때의 하루 단위 점검. 모달(추가·수정)이 쓴다. */
+    function hqValidateCore(ent, emp, mine, frm, to, kind, note, dateStr) {
+      return hqValidateSegment(ent, emp, mine, frm, to, kind, note)
+        || hqShortDayProblem(ent, emp, (mine || []).concat([{ from: frm, to, kind }]),
+                             dateStr || STATE.date);
+    }
     /** 하루 입력 화면용 — STATE.entries / STATE.hqSegments 기준. skipIdx = 자기 자신(수정 시). */
     function hqValidate(empId, frm, to, kind, note, skipIdx) {
       const emp = STATE.employees.find((e) => e.id === empId);
       const mine = (STATE.hqSegments || []).filter((s, i) => s.id === empId && i !== skipIdx);
-      return hqValidateCore(STATE.entries[empId], emp, mine, frm, to, kind, note);
+      return hqValidateCore(STATE.entries[empId], emp, mine, frm, to, kind, note, STATE.date);
     }
 
     /**
@@ -1747,10 +1753,65 @@
       });
       return out;
     }
+    // ───────── 하루 단위 점검: 짧은 날이 통째로 본사 (2026-09-09 다순님) ─────────
+    //   2026-08-19 강남우성점 유연상(SM) — 11:00~14:00 3시간이 전부 푸드트럭이었다. 정직원은
+    //   **하루 고정일급**이라 3시간만 찍혀도 그날 일급 전액(215,013원)이 나가고, 구간이 근무를
+    //   통째로 덮으니 그 전액이 본사로 넘어가 매장 부담이 0원이 됐다. 금액은 규칙대로지만
+    //   **그날 근태가 이상하다** — 정직원이 3시간만 일했다면 반차이거나 휴일에 나온 것이어야 한다.
+    //   ★ 본사 귀속 규칙을 의심하는 게 아니다. '근무 전부가 출장이면 전액 본사'는 맞다.
+    //     의심하는 것은 4시간도 안 되는 하루에 일급 전액이 붙는 것이고, 반차·🎌 를 표시하면 설명된다.
+    //   봇 src/offsite.short_day_problem 과 같은 규칙.
+    const HQ_SHORT_DAY_H = 4;
+
+    /** 그날 이 사람이 **다른 매장**에서 일한 시간. 저장된 것 + 지금 입력 중인 것. */
+    function hqOtherStoreHours(dateStr, empId, ent) {
+      let h = 0;
+      for (const r of (((STATE.other_store_work_by_date || {})[dateStr] || {})[empId] || [])) {
+        h += Number(r.h) || 0;
+      }
+      // 주간 입력에서 지금 넣고 있는 🔄 다른 매장 근무 (아직 저장 전이라 위 목록에 없다)
+      for (const a of ((ent && ent.away) || [])) h += Number(a.hours) || 0;
+      // 하루 입력에서 지금 넣고 있는 '지원갔음'
+      if (dateStr === STATE.date) {
+        for (const sp of (STATE.supportEntries || [])) {
+          if (sp.direction === 'out' && String(sp.employee_id || '') === String(empId)) {
+            h += Number(sp.hours) || 0;
+          }
+        }
+      }
+      return h;
+    }
+
+    /**
+     * 하루 근무가 **전부** 본사 근무인데 4시간 미만이면 그 문구, 아니면 null.
+     * 다섯이 모두 맞아야 걸린다: 실근무 4h 미만 · 매장에 남는 근무 0 · 정직원(Crew 제외) ·
+     * 반차도 🎌 도 아님 · 그날 다른 매장 근무도 없음.
+     */
+    function hqShortDayProblem(ent, emp, segs, dateStr) {
+      if (!ent || !ent.on || !ent.in || !ent.out) return null;
+      if ((emp && emp.grade) === 'Crew') return null;          // 시급제 — 3시간이면 3시간치다
+      if (ent.half || ent.hol || isOfficialHoliday(dateStr)) return null;
+      if (hqOtherStoreHours(dateStr, emp && emp.id, ent) > 0) return null;
+      const win = hqShiftWin(ent);
+      if (!win) return null;
+      const brk = (ent.break_start && ent.break_end) ? hqNorm(ent.break_start, ent.break_end, win) : null;
+      const worked = (win[1] - win[0]) - (brk ? (brk[1] - brk[0]) : 0);
+      if (worked <= 0 || worked >= HQ_SHORT_DAY_H * 60) return null;
+      const awayMin = awayMinutesOf(ent, segs);
+      if (awayMin <= 0 || worked - awayMin > 0) return null;   // 매장에 남는 근무가 있다 — 정상
+      const what = (segs || []).filter((s) => hqIsAway(s.kind))
+        .map((s) => `${hqKindLabel(s.kind)} ${s.from}~${s.to}`).join(' · ');
+      return `근무 ${ent.in}~${ent.out}(${(worked / 60).toFixed(1)}h) 전부가 본사 근무입니다 (${what}). `
+        + `매장 근무가 하나도 남지 않는데 ${HQ_SHORT_DAY_H}시간 미만이라, 정직원 일급 전액이 그대로 본사로 넘어갑니다.\n\n`
+        + `반차인지 🎌 공휴일 근무인지 표시해주세요. 둘 다 아니면 출퇴근 시간이 맞는지 확인해주세요. `
+        + `(다른 매장 근무가 있으면 그 근무를 먼저 넣어주세요)`;
+    }
+
     /** 저장 직전 최종 점검 — 출퇴근을 나중에 바꿔 구간이 창 밖으로 밀렸거나, 자동 휴게가 구간 위에
      *  다시 잡힌 경우를 잡는다(모달에서는 그 순간의 값만 본다). 문제 문구 목록, 비면 저장해도 된다. */
-    function hqSaveProblems(dateLabel, entryOf, segsOf) {
+    function hqSaveProblems(dateLabel, entryOf, segsOf, dateStr) {
       const out = [];
+      const d = dateStr || STATE.date;
       for (const emp of STATE.employees) {
         if ((STATE.deletedEmployees || []).includes(emp.id)) continue;
         const ent = entryOf(emp.id);
@@ -1763,9 +1824,12 @@
         }
         segs.forEach((s, i) => {
           const others = segs.filter((_, j) => j !== i);
-          const err = hqValidateCore(ent, emp, others, s.from, s.to, s.kind, s.note || '');
+          const err = hqValidateSegment(ent, emp, others, s.from, s.to, s.kind, s.note || '');
           if (err) out.push(`• ${dateLabel} ${nm} — ${hqIcon(s.kind)} ${s.from}~${s.to}: ${err.split('\n')[0]}`);
         });
+        // 하루 단위는 사람당 한 번 — 구간마다 적으면 같은 말이 여러 줄 나온다.
+        const day = hqShortDayProblem(ent, emp, segs, d);
+        if (day) out.push(`• ${dateLabel} ${nm} — 🏢 ${day.split('\n')[0]}`);
       }
       return out;
     }
@@ -3851,8 +3915,9 @@
         const probs = hqSaveProblems(STATE.date.slice(5).replace('-', '/'), (id) => STATE.entries[id],
                                      (id) => (STATE.hqSegments || []).filter((x) => x.id === id));
         if (probs.length) {
-          say('⛔ 본사 근무·점장 업무 시간이 근무·휴게와 맞지 않아 저장할 수 없습니다:\n\n' + probs.join('\n')
-            + '\n\n출퇴근·휴게를 바꾼 뒤 구간이 밀려난 경우입니다. 구간을 다시 잡거나 지워주세요.');
+          say('⛔ 본사 근무·점장 업무 시간이 그날 근무와 맞지 않아 저장할 수 없습니다:\n\n' + probs.join('\n')
+            + '\n\n출퇴근·휴게를 바꾼 뒤 구간이 밀려났거나, 짧은 날이 통째로 본사 근무가 된 경우입니다. '
+            + '구간을 다시 잡거나, 반차·🎌 를 표시해주세요.');
           return;
         }
       }
@@ -4417,7 +4482,7 @@
         const probs = [];
         dirty.forEach(d => {
           const dl = d.slice(5).replace('-', '/');
-          probs.push(...hqSaveProblems(dl, (id) => wkEntry(d, id), (id) => (wkEntry(d, id).segs || [])));
+          probs.push(...hqSaveProblems(dl, (id) => wkEntry(d, id), (id) => (wkEntry(d, id).segs || []), d));
           STATE.employees.forEach(emp => {
             const e = wkEntry(d, emp.id);
             (e.away || []).forEach((a, i) => {
@@ -4428,7 +4493,8 @@
         });
         if (probs.length) {
           say('⛔ 근무·휴게와 맞지 않는 항목이 있어 저장할 수 없습니다:\n\n' + probs.join('\n')
-            + '\n\n출퇴근·휴게를 바꾼 뒤 구간이 밀려난 경우입니다. 해당 날짜의 구간을 다시 잡거나 지워주세요.');
+            + '\n\n출퇴근·휴게를 바꾼 뒤 구간이 밀려났거나, 짧은 날이 통째로 본사 근무가 된 경우입니다. '
+            + '해당 날짜의 구간을 다시 잡거나, 반차·🎌 를 표시해주세요.');
           return;
         }
       }
