@@ -31,7 +31,11 @@
     "── MCP 는 읽기 전용만 올린다 ─────────────────────────────────",
     "  훅은 Bash·WebFetch·Write·Edit 만 가로챈다. MCP 쓰기 도구(PR 생성·머지·add_repo)는",
     "  바닥이 없으므로 넣지 않는다 — 특히 add_repo 는 저장소를 push 권한과 함께 붙인다.",
-    "  그 프롬프트를 없애려면 **세션 시작 시 저장소를 미리 선택**하는 것이 맞다."
+    "  그 프롬프트를 없애려면 **세션 시작 시 저장소를 미리 선택**하는 것이 맞다.",
+    "",
+    "── 네이버웍스 공식 WORKS MCP (2026-10-07 연결, claude.ai 커넥터) ──",
+    "  읽기 도구 24개만 올렸다. mail_send · *_create_* · *_update_* · *_delete_* · task_complete 등 쓰기는 매번 묻는다.",
+    "  도구 이름은 클라우드 세션 실측(mcp__works-mcp__*). 로컬 CLI 에서 접두사가 다르면 그쪽 이름을 따로 추가할 것."
   ],
   "permissions": {
     "allow": [
@@ -69,7 +73,32 @@
       "mcp__naver-works-drive__nw_drive_drives",
       "mcp__naver-works-drive__nw_drive_list",
       "mcp__naver-works-drive__nw_drive_tree",
-      "mcp__naver-works-drive__nw_drive_find"
+      "mcp__naver-works-drive__nw_drive_find",
+
+      "mcp__works-mcp__user_get_info",
+      "mcp__works-mcp__view_organization_members",
+      "mcp__works-mcp__view_group_members",
+      "mcp__works-mcp__view_user_groups",
+      "mcp__works-mcp__view_user_organizations",
+      "mcp__works-mcp__mail_list_folders",
+      "mcp__works-mcp__mail_list_folder_messages",
+      "mcp__works-mcp__mail_read",
+      "mcp__works-mcp__drive_get_my_info",
+      "mcp__works-mcp__drive_list_root_files",
+      "mcp__works-mcp__drive_list_files",
+      "mcp__works-mcp__calendar_list_personal_calendars",
+      "mcp__works-mcp__calendar_list_events",
+      "mcp__works-mcp__calendar_view_event",
+      "mcp__works-mcp__task_list_categories",
+      "mcp__works-mcp__task_get_category",
+      "mcp__works-mcp__task_list_tasks",
+      "mcp__works-mcp__task_view",
+      "mcp__works-mcp__board_list_boards",
+      "mcp__works-mcp__board_list_posts",
+      "mcp__works-mcp__board_view_post",
+      "mcp__works-mcp__board_get_my_posts",
+      "mcp__works-mcp__note_list_posts",
+      "mcp__works-mcp__note_view_post"
     ]
   },
   "hooks": {
