@@ -22,8 +22,10 @@
 3. **파일 첨부 → 다운로드 → 메모장으로 열기는 쓰지 않는다.** 여러 파일을 묶은 임시 파일도 만들지 않는다.
 4. SQL 이면 **대상 Supabase ref**(일본 `tnsizarbpgvfidsgubti` / 한국 `gylhxpvltnxhwjagrkts`)와 **확인 쿼리·기대 결과**를 함께 준다.
 5. **WSL·터미널 명령은 항상 폴더 이동(`cd`)부터 포함한다.** 다순 PC 의 레포 경로 = WSL `/mnt/c/Users/wooji/projects/<폴더>`(예: `cd /mnt/c/Users/wooji/projects/eggdrop-japan`, 관제탑은 `…/projects/control-tower`). 레포별 폴더는 관제탑 §5 인벤토리의 로컬 경로. 서버(`ssh eggdrop-auto`)에서 실행할 명령도 `cd /root/…` 부터.
+6. **명령은 WSL 기준으로 주고, 코드 블록마다 어디서 실행하는지 이름을 붙인다** — `**[WSL]**` · `**[PowerShell]**` · `**[서버 eggdrop-auto]**`. 다순은 PowerShell 창도 쓰므로 WSL 경로(`/mnt/c/…`)를 PowerShell 에 붙이면 `C:\mnt\c\…` 로 해석돼 엉뚱한 폴더에서 실행된다(실제 사고 2026-10-12: 클론이 모노레포 안에 생기고 `npm install` 이 모노레포에서 돎). PowerShell 이 꼭 필요할 때만 PowerShell 로 주고 그렇게 표시한다.
 - 도입 2026-09-29, 다순 직접 요청. 전역 `~/.claude/CLAUDE.md`(`eggdrop-claude-dotfiles`)에도 같은 규칙.
 - 5번은 2026-09-30 다순 요청("wsl은 항상 폴더 이동까지 포함해서 써줘").
+- 6번은 2026-10-12 다순 요청("wsl로 주는게 더 좋다. 단 제공할때 wsl인지 powershell인지 함께 말해줘").
 
 ## 🛫 관제탑 (조율 단일 지점)
 - 정본: `das00n/eggdrop-control-tower` 레포의 `CONTROL-TOWER.md`.
