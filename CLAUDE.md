@@ -42,6 +42,7 @@
 | 하려는 일 | 쓸 것 |
 |---|---|
 | 메일 읽기·폴더·발송 · 캘린더 · 할 일 · 게시판 · 노트 · 조직도/그룹 조회 · 드라이브 목록·폴더 생성 | **공식 WORKS MCP** `mcp__works-mcp__*` |
+| 텔레그램 **보고를 메일로도** 보내기(지정한 보고만, 자동) | **관제탑 `tools/report-mail/`** — README 「보고에 메일 붙이기」·등록부. `mail_send` 아님 |
 | 드라이브 **이동·이름변경·복사·트리·찾기·점검·다운로드**, 조직/그룹 폴더 | **자체** `mcp__naver-works-drive__nw_*` — 공식에는 이 도구가 없다 |
 | **정기 작업(Routine)** — 매일 메일 수집 등 | **자체 MCP** (`eggdrop-global/tools/mcp/naver-works/`, 드라이브) — claude.ai 커넥터는 Routine 에 안 물린다 |
 | 계정 생성·정지, 조직 변경 | **둘 다 없다.** 임의로 만들지 말고 관제탑 §7-D 참조 |
@@ -57,6 +58,17 @@
 3. **테이블별 writer 1명.** `sales`=NCP cron · `orders`=동원 수집 · `labor_costs`/`attendance`=인건비 봇 · `stores`=수집기. 한 테이블 두 writer 금지.
 
 > 일본(`eggdrop-japan`)·본사 물품(`eggdrop-goods`)은 **별도 Supabase(완전 격리)** — 위 규칙 무관.
+
+## 🌿 작업 브랜치가 main 과 이어져 있는지 먼저 확인
+- `eggdrop_automation_operation` 의 main 이력은 **2026-08-27 모노레포 통합 때 새로 시작**됐다(루트 `8b16743`). 그 이전에 만든 브랜치는 main 과 **공통 조상이 없어 병합이 불가능**하다(`refusing to merge unrelated histories`). 다순이 눈으로 구분하기 어렵다 — **세션이 확인한다.**
+- **작업을 시작하거나 기존 브랜치를 이어받을 때 먼저 실행한다:**
+  ```bash
+  git fetch origin main -q
+  git merge-base HEAD origin/main >/dev/null 2>&1 && echo "✅ main 과 이어짐" || echo "⚠️ 옛 이력 — main 에서 새 브랜치를 딸 것"
+  ```
+- ⚠️ 가 나오면 **그 브랜치에서 계속 작업하지 않는다.** `git checkout -B <새브랜치> origin/main` 으로 새로 따고, 필요한 파일만 `git checkout <옛브랜치> -- <경로>` 로 옮긴 뒤 PR 을 연다. 다순에게 "옛 이력이라 새 브랜치로 옮겼다"고 알린다.
+- 옛 브랜치 버전으로 main 파일을 **통째로 덮지 않는다.** 그 사이 main 이 독자적으로 발전했을 수 있다(실제 사례: `scripts/announce_miniapp.py`).
+- 도입 2026-10-08 — 7월 브랜치의 PR #122 가 병합 불가로 막혀 뒤늦게 발견. 상세 = `CONTROL-TOWER.md` §모노레포 통합.
 
 ## 멀티세션 충돌 주의
 - 여러 세션이 같은 공유 Supabase·여러 레포를 동시에 작업합니다. 겹치면 순서 조율(관제탑 §2 레지스트리).
