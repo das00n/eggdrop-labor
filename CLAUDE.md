@@ -60,15 +60,18 @@
 > 일본(`eggdrop-japan`)·본사 물품(`eggdrop-goods`)은 **별도 Supabase(완전 격리)** — 위 규칙 무관.
 
 ## 🌿 작업 브랜치가 main 과 이어져 있는지 먼저 확인
-- `eggdrop_automation_operation` 의 main 이력은 **2026-08-27 모노레포 통합 때 새로 시작**됐다(루트 `8b16743`). 그 이전에 만든 브랜치는 main 과 **공통 조상이 없어 병합이 불가능**하다(`refusing to merge unrelated histories`). 다순이 눈으로 구분하기 어렵다 — **세션이 확인한다.**
-- **작업을 시작하거나 기존 브랜치를 이어받을 때 먼저 실행한다:**
+- 클라우드 세션의 레포는 **최근 커밋만 받아 온 얕은 클론(shallow clone)** 이다. 그래서 오래된 브랜치를 병합하면 `refusing to merge unrelated histories` 가 나고 `git merge-base` 도 공통 조상을 못 찾는다. **이력이 끊긴 게 아니다** — 공통 조상이 받아 온 범위 밖에 있을 뿐이다. 다순은 눈으로 구분하기 어렵다 — **세션이 확인한다.**
+- **기존 브랜치를 이어받거나 병합하기 전에, 전체 이력부터 받고 확인한다:**
   ```bash
-  git fetch origin main -q
-  git merge-base HEAD origin/main >/dev/null 2>&1 && echo "✅ main 과 이어짐" || echo "⚠️ 옛 이력 — main 에서 새 브랜치를 딸 것"
+  D=$(git ls-remote --symref origin HEAD | awk '/^ref:/{sub("refs/heads/","",$2); print $2}')   # 기본 브랜치(main 또는 master)
+  [ "$(git rev-parse --is-shallow-repository)" = true ] && git fetch --unshallow origin -q
+  git fetch -q origin "+refs/heads/$D:refs/remotes/origin/$D"
+  git merge-base HEAD "origin/$D" >/dev/null 2>&1 && echo "✅ 기본 브랜치($D)와 이어짐" || echo "⚠️ 공통 조상 없음 — 기본 브랜치($D)에서 새 브랜치를 딸 것"
   ```
-- ⚠️ 가 나오면 **그 브랜치에서 계속 작업하지 않는다.** `git checkout -B <새브랜치> origin/main` 으로 새로 따고, 필요한 파일만 `git checkout <옛브랜치> -- <경로>` 로 옮긴 뒤 PR 을 연다. 다순에게 "옛 이력이라 새 브랜치로 옮겼다"고 알린다.
-- 옛 브랜치 버전으로 main 파일을 **통째로 덮지 않는다.** 그 사이 main 이 독자적으로 발전했을 수 있다(실제 사례: `scripts/announce_miniapp.py`).
-- 도입 2026-10-08 — 7월 브랜치의 PR #122 가 병합 불가로 막혀 뒤늦게 발견. 상세 = `CONTROL-TOWER.md` §모노레포 통합.
+  `--unshallow` 줄을 빼면 이어진 브랜치도 ⚠️ 로 잘못 나온다(2026-10-14 재현). 기본 브랜치가 `master` 인 레포(`eggdrop-japan`·`eggdrop-design-system`)가 있어 첫 줄이 이름을 알아낸다.
+- 전체 이력을 받은 뒤에도 ⚠️ 이면 그때만 진짜로 끊긴 것이다. **그 브랜치에서 계속 작업하지 않는다.** `git checkout -B <새브랜치> "origin/$D"` 로 새로 따고, 필요한 파일만 `git checkout <옛브랜치> -- <경로>` 로 옮긴 뒤 PR 을 연다. 다순에게 그렇게 옮겼다고 알린다.
+- 이어져 있어도 옛 브랜치 버전으로 기본 브랜치 파일을 **통째로 덮지 않는다.** 그 사이 기본 브랜치가 독자적으로 발전했을 수 있다(실제 사례: `scripts/announce_miniapp.py` — PR #122 를 그대로 병합하면 기능이 퇴보해, 필요한 것만 #426 으로 옮겼다).
+- 경위: 2026-10-08 세션이 얕은 클론에서 보인 가짜 루트(`8b16743`)를 보고 "모노레포 main 이력이 2026-08-27 에 새로 시작됐다"고 기록했다. 전체 이력으로 다시 보니(2026-10-14) main 의 루트는 `e237954`(2026-06-01) 하나이고 **이력은 끊긴 적이 없다.** "옛 이력"으로 분류했던 브랜치 6개도 전부 main 과 공통 조상이 있다. 상세 = `CONTROL-TOWER.md` §모노레포 통합.
 
 ## 멀티세션 충돌 주의
 - 여러 세션이 같은 공유 Supabase·여러 레포를 동시에 작업합니다. 겹치면 순서 조율(관제탑 §2 레지스트리).
