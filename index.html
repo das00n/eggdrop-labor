@@ -513,14 +513,19 @@
               font-variant-numeric: tabular-nums; line-height: 1.1; }
     .lr-cap { font-size: 11px; color: var(--hint); }
     .lr-msg { font-size: 12.5px; font-weight: 600; color: var(--text); margin-top: 4px; line-height: 1.45; }
-    /* 주 6일 · 🎌 미지정 차단 안내 */
+    /* 주 6일 · 🎌 미지정 — 경고 + 날 고르기 */
     .sdm-who { margin-top: 12px; font-size: 14px; font-weight: 700; color: var(--text); }
     .sdm-range { color: #e11d48; }
     .sdm-days { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 13px; font-variant-numeric: tabular-nums; }
     .sdm-days td { padding: 5px 4px; border-bottom: 1px solid rgba(127,127,127,0.18); color: var(--text); }
-    .sdm-days tr.now td { background: rgba(225,29,72,0.08); font-weight: 700; }
-    .sdm-days .sdm-note { color: var(--hint); font-size: 11.5px; text-align: right; }
-    .sdm-days tr.now .sdm-note { color: #e11d48; }
+    .sdm-days .sdm-note { color: var(--hint); font-size: 11px; text-align: right; }
+    .sdm-days .sdm-h { color: var(--hint); text-align: right; white-space: nowrap; }
+    .sdm-days .sdm-radio { width: 22px; text-align: center; color: var(--hint); }
+    .sdm-days tr { cursor: pointer; }
+    .sdm-days tr.closed { cursor: default; opacity: 0.45; }
+    .sdm-days tr.pick td { background: rgba(225,29,72,0.10); font-weight: 700; }
+    .sdm-days tr.pick .sdm-radio { color: #e11d48; }
+    .sdm-hint { color: var(--hint); font-size: 11.5px; }
     .sdm-todo { margin-top: 10px; padding: 10px; border-radius: 10px; background: rgba(225,29,72,0.06);
                 border: 1px solid rgba(225,29,72,0.25); font-size: 12.5px; line-height: 1.55; color: var(--text); }
     .sdm-todo ol { margin: 4px 0 0 18px; padding: 0; }
@@ -1084,22 +1089,22 @@
     </div>
   </div>
 
-  <!-- ───────── 주 6일 · 🎌 미지정 — 저장 차단 안내 (2026-10-15) ─────────
-       막기만 하면 매니저는 무엇을 고쳐야 할지 모른 채 같은 값을 다시 넣는다(다순님: "차단되면
-       충분히 알 수 있어야 하고, 언제부터 언제 사이에 무엇을 할지 구체적인 지침이 있어야 한다").
-       그 주 근무일을 날짜·매장별로 펴고, 어디서 무엇을 누르는지 적는다. 이번에 저장하는 날은
-       언제나 이 화면에서 고칠 수 있으므로 그 날에 바로 🎌 를 켜는 버튼을 둔다. -->
+  <!-- ───────── 주 6일 · 🎌 미지정 — 경고 + 날 고르기 (2026-10-15) ─────────
+       막지 않는다(다순님 방침). 그 주 근무일을 날짜·매장·시간별로 펴고 공휴일 근무로 할 날을 고르게 한다.
+       기본 선택은 근무가 가장 짧은 날 — 고르지 않은 저장(옛 화면 등)에서 봇이 쓰는 규칙과 같다.
+       처음엔 저장을 막고 '그 날에 🎌 켜기' 만 됐는데, 지금 저장하는 날만 고를 수 있어 다른 날을 원하면
+       화면을 오가야 했다(다순님: "다른 날도 선택되는 게 좋겠다"). -->
   <div class="modal-backdrop" id="sixday-modal">
     <div class="modal">
-      <h2 class="modal-title">⛔ 저장되지 않았습니다</h2>
+      <h2 class="modal-title">⚠️ 주 6일 근무 — 🎌 공휴일 근무 지정</h2>
       <p class="modal-sub">
-        주 6일 이상 근무한 주는 그 중 <b>하루</b>를 <b>🎌 공휴일 근무</b>(휴일근로 · 그날 통상시급 0.5배 가산)로
-        지정해야 저장됩니다. 근무일은 <b>다른 매장 근무까지 합산</b>해 셉니다.
+        주 6일 이상 근무한 주는 그 중 <b>하루</b>가 <b>🎌 공휴일 근무</b>(휴일근로 · 그날 통상시급 0.5배 가산)입니다.
+        근무일은 <b>다른 매장 근무까지 합산</b>해 셉니다. 아래에서 <b>날짜를 눌러</b> 고른 뒤 저장하세요.
       </p>
       <div id="sdm-body"></div>
       <div class="modal-actions">
-        <button class="modal-btn secondary" onclick="closeSixdayModal()">닫고 직접 고르기</button>
-        <button class="modal-btn primary" id="sdm-fix" onclick="sixdayQuickFix()">🎌 지정하기</button>
+        <button class="modal-btn secondary" onclick="closeSixdayModal()">돌아가서 고치기</button>
+        <button class="modal-btn primary" id="sdm-fix" onclick="sixdayConfirm()">🎌 지정하고 저장</button>
       </div>
     </div>
   </div>
@@ -3460,11 +3465,11 @@
       const t = edit || (d === STATE.date && STATE.entries[empId]) || null;
       if (t) {
         const w = !!(t.on && t.in && t.out);
-        return { worked: w, hol: w && !!t.hol };
+        return { worked: w, hol: w && !!t.hol, hours: w ? calcWork(t.in, t.out, t.breakH || 0) : 0 };
       }
       const p = ((STATE.prev_by_date_emp || {})[d] || {})[empId];
       const w = !!(p && p.in && p.out);
-      return { worked: w, hol: w && !!p.hol };
+      return { worked: w, hol: w && !!p.hol, hours: w ? (Number(p.hours) || calcWork(p.in, p.out, p.breakH || 0)) : 0 };
     }
 
     /** 그 날 다른 매장 근무 {worked, hol}. 우리가 넣은 '지원갔음'은 지금 화면 목록이 정본이다 —
@@ -3478,19 +3483,22 @@
       else if (d === STATE.date) cur = (STATE.supportEntries || []).filter(sp => sp.direction === 'out' && emp && wkSupIsMine(sp, emp));
       const ours = new Set(((STATE.prev_support_by_date || {})[d] || [])
         .filter(sp => sp.direction === 'out' && emp && wkSupIsMine(sp, emp)).map(sp => sp.other_store));
-      let worked = false, hol = false;
+      let worked = false, hol = false, hours = 0;
       const stores = [];
       for (const r of (((STATE.other_store_work_by_date || {})[d] || {})[empId] || [])) {
         if (cur && ours.has(r.s)) continue;
-        if (Number(r.h || 0) > 0) { worked = true; if (r.hol) hol = true; if (!stores.includes(r.s)) stores.push(r.s); }
+        if (Number(r.h || 0) > 0) {
+          worked = true; hours += Number(r.h); if (r.hol) hol = true;
+          if (!stores.includes(r.s)) stores.push(r.s);
+        }
       }
       for (const a of (cur || [])) {
         if (Number(a.hours || 0) > 0) {
-          worked = true; if (a.holiday) hol = true;
+          worked = true; hours += Number(a.hours); if (a.holiday) hol = true;
           if (a.other_store && !stores.includes(a.other_store)) stores.push(a.other_store);
         }
       }
-      return { worked, hol, stores };
+      return { worked, hol, stores, hours };
     }
 
     /** 그 주(월~일)에 이 사람이 며칠 근무하나 — 전 매장. assumeWorked 면 dateStr 을 근무일로 친다
@@ -3552,7 +3560,10 @@
       for (let i = 0; i < 7; i++) {
         const d = addDays(monday, i);
         const own = ownDay(d, empId), oth = otherStoreDay(d, empId);
-        if (own.worked || oth.worked) out.push({ d, own: own.worked, others: oth.stores || [], hol: own.hol || oth.hol });
+        if (own.worked || oth.worked) {
+          out.push({ d, own: own.worked, others: oth.stores || [], hol: own.hol || oth.hol,
+                     hours: Math.round(((own.hours || 0) + (oth.hours || 0)) * 100) / 100 });
+        }
       }
       return out;
     }
@@ -3566,106 +3577,86 @@
     /** 그 주 범위 '10/19(월) ~ 10/25(일)' — 언제부터 언제 사이에 지정하는지. */
     function sdRange(wk) { return `${sdDay(wk)} ~ ${sdDay(addDays(wk, 6))}`; }
 
-    /** 저장하려는 그 날에 🎌 를 켤 자리 — 'own'(직원 줄) · 'away'(지원 근무 줄). ctx = 'day' | 'week'. */
-    function sixdayFixKind(d, empId, ctx) {
-      if (ctx === 'week') {
-        const e = wkEntry(d, empId);
-        return (e.on && e.in && e.out) ? 'own' : 'away';
-      }
-      const t = STATE.entries[empId];
-      return (t && t.on && t.in && t.out) ? 'own' : 'away';
-    }
 
     function sixdayMessage(hits) {
       const lbl = (wk) => {
         const a = wk.slice(5).split('-'), b = addDays(wk, 6).slice(5).split('-');
         return `${+a[0]}/${+a[1]}~${+b[0]}/${+b[1]}`;
       };
-      return `⛔ 저장되지 않았습니다 — 주 ${SIXDAY_MIN}일 이상 근무인데 🎌 공휴일 근무 지정이 없습니다.\n\n`
+      // 안내창(sixday-modal)이 없는 옛 화면용 글 안내 — 막지 않고 알린다(봇이 저장 뒤 지정한다).
+      return `⚠️ 주 ${SIXDAY_MIN}일 근무 — 🎌 공휴일 근무 지정이 없습니다.\n\n`
         + hits.map(h => `• ${h.emp.label || h.emp.name} — ${lbl(h.week)} 주 ${h.days}일 근무\n`
-          + `  → ${sdRange(h.week)} 사이 근무일 중 하루에 🎌`).join('\n')
+          + `  → ${sdRange(h.week)} 사이 하루가 공휴일 근무입니다`).join('\n')
         + `\n\n주 ${SIXDAY_MIN}일 이상 근무한 주는 그 중 하루가 휴일근로(공휴 가산)입니다. `
         + `근무일은 다른 매장 근무까지 합산해 셉니다.\n\n`
-        + `그 주 근무일 중 하루에 🎌 를 지정해주세요.\n`
+        + `그대로 저장하면 근무가 가장 짧은 날이 자동으로 지정됩니다. 다른 날로 하려면 그 날에 🎌 를 켜주세요.\n`
         + `· 우리 매장 근무일(푸드트럭·본사 근무가 있는 날 포함) → 직원 줄의 🎌 (주간 입력은 🎌공휴)\n`
         + `· 다른 매장에 지원 간 날 → 지원 근무 줄의 🎌 (주간 입력은 🔄 칸의 🎌)`;
     }
 
-    // ── 차단 안내 모달 — 날짜·매장별 근무일 + 할 일 + 지금 저장하는 날에 🎌 켜기 ──
-    let SDM = null;   // {hits, ctx}
-    function openSixdayModal(hits, ctx) {
+    // ── 주 6일 안내창 — 날짜·매장·시간별 근무일에서 공휴일 근무로 할 날을 고르고 저장 (2026-10-15) ──
+    //   막지 않는다(다순님 방침). 기본 선택은 **근무가 가장 짧은 날**(동률이면 이른 날) — 봇이 고르지
+    //   않은 저장에 쓰는 규칙과 같다. 날짜를 누르면 바꿀 수 있고, 마감된 날은 고를 수 없다.
+    //   고른 날은 sixday_picks 로 보내고 봇이 저장 뒤 그 날(그날 근무한 매장 전부)에 지정·재계산한다.
+    let SDM = null;   // {hits, ctx, proceed, sel: {i: date}}
+    /** 기본 선택 — 고를 수 있는 날 중 근무가 가장 짧은 날(동률이면 이른 날). 봇 choose_days 와 같다. */
+    function sixdayDefault(list) {
+      const c = list.filter((x) => canEditDate(x.d));
+      if (!c.length) return null;
+      return c.slice().sort((a, b) => (Math.round(a.hours * 100) - Math.round(b.hours * 100)) || a.d.localeCompare(b.d))[0].d;
+    }
+    function openSixdayModal(hits, ctx, proceed) {
       const el = document.getElementById('sixday-modal');
-      if (!el) { say(sixdayMessage(hits)); return; }
-      SDM = { hits, ctx };
-      const week = ctx === 'week';
-      document.getElementById('sdm-body').innerHTML = hits.map((h) => {
+      if (!el) { say(sixdayMessage(hits)); proceed && proceed(); return; }
+      SDM = { hits, ctx, proceed, sel: {} };
+      hits.forEach((h, i) => { SDM.sel[i] = sixdayDefault(h.list); });
+      renderSixdayModal();
+      el.classList.add('show');
+    }
+    function renderSixdayModal() {
+      if (!SDM) return;
+      const { hits, ctx } = SDM;
+      document.getElementById('sdm-body').innerHTML = hits.map((h, i) => {
         const name = h_esc(h.emp.label || h.emp.name);
-        const fixDay = h.now[h.now.length - 1];
+        const dflt = sixdayDefault(h.list);
         const rows = h.list.map((x) => {
           const places = [x.own ? STATE.store : null, ...x.others.map((st) => `${st} (다른 매장)`)]
             .filter(Boolean).join(' · ');
-          const isNow = h.now.includes(x.d);
-          const note = isNow ? '← 지금 저장' : (!canEditDate(x.d) ? '마감 · 수정 불가' : '');
-          return `<tr class="${isNow ? 'now' : ''}"><td>${sdDay(x.d)}</td><td>${h_esc(places)}</td>`
-            + `<td class="sdm-note">${note}</td></tr>`;
+          const can = canEditDate(x.d), on = SDM.sel[i] === x.d;
+          const tags = [];
+          if (h.now.includes(x.d)) tags.push('지금 저장');
+          if (x.d === dflt) tags.push('가장 짧은 날');
+          if (!can) tags.push('마감 · 선택 불가');
+          return `<tr class="${on ? 'pick' : ''}${can ? '' : ' closed'}"${can ? ` onclick="sdmPick(${i}, '${x.d}')"` : ''}>`
+            + `<td class="sdm-radio">${on ? '🎌' : (can ? '○' : '')}</td><td>${sdDay(x.d)}</td>`
+            + `<td>${h_esc(places)}</td><td class="sdm-h">${(+x.hours || 0).toFixed(1)}h</td>`
+            + `<td class="sdm-note">${tags.join(' · ')}</td></tr>`;
         }).join('');
-        const kind = fixDay ? sixdayFixKind(fixDay, h.emp.id, ctx) : 'own';
-        const where = kind === 'own'
-          ? (week ? `주간 입력 ${sdDay(fixDay)} 줄의 <b>🎌공휴</b>` : `이 화면 <b>${name}</b> 줄의 <b>☐ 🎌 공휴일 근무</b>`)
-          : (week ? `주간 입력 ${sdDay(fixDay)} 🔄 칸의 <b>🎌</b>` : `이 화면 🔄 지원 근무 줄의 <b>🎌</b>`);
+        const sel = SDM.sel[i];
         return `<div class="sdm-who">${name} · <span class="sdm-range">${sdRange(h.week)}</span> · ${h.days}일 근무 · 🎌 없음</div>`
           + `<table class="sdm-days">${rows}</table>`
-          + `<div class="sdm-todo"><b>👉 할 일</b><ol>`
-          + `<li><b>${sdRange(h.week)}</b> 사이 위 근무일 중 <b>하루</b>에 🎌 를 켭니다.<br>`
-          + (fixDay ? `· 가장 빠른 방법: 지금 저장하는 <b>${sdDay(fixDay)}</b> — 아래 <b>[🎌 지정]</b> 버튼, 또는 ${where}<br>` : '')
-          + `· 다른 날로 하려면: ${week ? '주간 입력에서 그 날 줄의 🎌공휴 (지원 간 날은 🔄 칸의 🎌)'
-                                        : '📅 날짜를 그 날로 바꿔 직원 줄의 🎌 (지원 간 날은 🔄 지원 근무 줄의 🎌)'}</li>`
-          + `<li>다시 <b>[${week ? '💾 주간 저장' : '저장'}]</b> 을 누릅니다.</li></ol></div>`;
+          + `<div class="sdm-todo">👉 <b>${sdRange(h.week)}</b> 사이 하루가 공휴일 근무입니다. `
+          + (sel ? `<b>${sdDay(sel)}</b> 로 지정합니다 — 다른 날로 하려면 위에서 날짜를 누르세요.` : '고를 수 있는 날이 없습니다.')
+          + `<br><span class="sdm-hint">고르지 않고 저장돼도 근무가 가장 짧은 날이 자동으로 지정됩니다 · 그 날 통상시급 0.5배 가산</span></div>`;
       }).join('');
       const btn = document.getElementById('sdm-fix');
-      const fixable = hits.filter((h) => h.now.length);
-      btn.style.display = fixable.length ? '' : 'none';
-      btn.textContent = fixable.length === 1
-        ? `🎌 ${sdDay(fixable[0].now[fixable[0].now.length - 1])} 지정`
-        : `🎌 ${fixable.length}명 한 번에 지정`;
-      el.classList.add('show');
+      const one = hits.length === 1 && SDM.sel[0];
+      btn.textContent = one ? `🎌 ${sdDay(SDM.sel[0])} 지정하고 ${ctx === 'week' ? '주간 저장' : '저장'}`
+                            : `🎌 지정하고 ${ctx === 'week' ? '주간 저장' : '저장'}`;
     }
+    function sdmPick(i, d) { if (!SDM) return; SDM.sel[i] = d; renderSixdayModal(); }
     function closeSixdayModal() {
       document.getElementById('sixday-modal').classList.remove('show');
       SDM = null;
     }
-    /** 지금 저장하는 날에 🎌 를 켠다 — 그 주가 6일 이상이라 근거가 있어 사유는 받지 않는다.
-     *  저장은 자동으로 하지 않는다: 무엇이 바뀌었는지 보고 매니저가 다시 누른다. */
-    function sixdayQuickFix() {
+    /** 고른 날을 sixday_picks 로 싣고 저장을 이어간다. */
+    function sixdayConfirm() {
       if (!SDM) return;
-      const { hits, ctx } = SDM;
-      const done = [];
-      for (const h of hits) {
-        const d = h.now[h.now.length - 1];
-        if (!d) continue;
-        const kind = sixdayFixKind(d, h.emp.id, ctx);
-        if (ctx === 'week') {
-          const e = wkEdit(d, h.emp.id);
-          if (kind === 'own') { e.hol = true; e.holNote = null; }
-          else if ((e.away || []).length) { e.away[0] = { ...e.away[0], holiday: true, holiday_note: null }; }
-          else continue;
-        } else if (kind === 'own') {
-          const t = STATE.entries[h.emp.id];
-          t.hol = true; t.holNote = null;
-        } else {
-          const i = (STATE.supportEntries || []).findIndex((sp) =>
-            sp.direction === 'out' && wkSupIsMine(sp, h.emp) && Number(sp.hours || 0) > 0);
-          if (i < 0) continue;
-          STATE.supportEntries[i] = { ...STATE.supportEntries[i], holiday: true, holiday_note: null };
-        }
-        done.push(`${h.emp.label || h.emp.name} ${sdDay(d)}`);
-      }
+      const { hits, sel, proceed } = SDM;
+      STATE.sixdayPicks = hits.map((h, i) => sel[i] ? { name: h.emp.name, emp_id: h.emp.id, week: h.week, date: sel[i] } : null)
+        .filter(Boolean);
       closeSixdayModal();
-      if (ctx === 'week') renderWInput(); else { renderMain(); updateSummary(); }
-      say(done.length
-        ? `🎌 공휴일 근무로 지정했습니다:\n${done.map((x) => '• ' + x).join('\n')}\n\n`
-          + `확인한 뒤 다시 [${ctx === 'week' ? '💾 주간 저장' : '저장'}] 을 눌러주세요.`
-        : '지정할 수 있는 날을 찾지 못했습니다. 안내에 나온 날짜에서 🎌 를 직접 켜주세요.');
+      if (proceed) proceed();
     }
 
     // 개별 🎌 의 근거: 지정 공휴일이거나, 그 주 6일 이상 근무(6일째가 휴일근로).
@@ -4224,10 +4215,16 @@
         if (miss.length > 0) { say(missingInfoMessage(miss)); return; }
         const wlHits = weekLimitHits({ [STATE.date]: byEmp });
         if (wlHits.length > 0) { say(weekLimitMessage(wlHits)); return; }
-        // 주 6일 이상인데 🎌 없음 — 이번 저장에 근무가 실리는 사람만 본다(봇과 같은 범위)
+        // 주 6일 이상인데 🎌 없음 — 막지 않고 날을 고르게 한다(봇과 같은 범위: 이번 저장에 근무가 실리는 사람)
+        STATE.sixdayPicks = [];
         const sdHits = sixdayHits([STATE.date], (d, id) => byEmp[id] > 0);
-        if (sdHits.length > 0) { openSixdayModal(sdHits, 'day'); return; }
+        if (sdHits.length > 0) { openSixdayModal(sdHits, 'day', continueDaySave); return; }
       }
+      continueDaySave();
+    }
+
+    /** 저장 마지막 단계 — 지원 삭제 확인 · 인건비율 확인 → 전송. 주 6일 안내창의 [지정하고 저장] 뒤에도 여기로. */
+    function continueDaySave() {
       // 사라지는 지원 근무가 있으면 먼저 알린다 — 인건비율보다 급하다(기록이 없어진다)
       if (askDropSupportBeforeSave(STATE.date, () => {
         if (askRatioBeforeSave(weekStartOf(STATE.date), todayOverride(), sendDayPayload)) return;
@@ -4254,6 +4251,9 @@
         deleted_employee_info: { ...STATE.deletedInfo },
         entries: [],
         support_entries: STATE.supportEntries.slice(),     // [{direction, other_store, name, grade, hours, mode}]
+        // 주 6일 — 안내창에서 고른 공휴일 근무 날 [{name, emp_id, week, date}]. 봇이 저장 뒤 지정·재계산한다.
+        //   비어 있으면(옛 화면 등) 봇이 근무가 가장 짧은 날을 지정한다.
+        sixday_picks: (STATE.sixdayPicks || []).slice(),
         // 🏢 본사 근무 구간 — 그 날짜 통째 교체. 키가 **있어야** 서버가 이 날짜를 갱신한다
         //   (키가 없으면 서버는 기존 구간을 보존한다 — 옛 화면 대비).
         hq_segments: (STATE.hqSegments || []).map((s) => ({
@@ -4830,9 +4830,15 @@
         if (missWk.length > 0) { say(missingInfoMessage(missWk)); return; }
         const wlHits = weekLimitHits(byDate);
         if (wlHits.length > 0) { say(weekLimitMessage(wlHits)); return; }
+        STATE.sixdayPicks = [];
         const sdHits = sixdayHits(dirty, (d, id) => (byDate[d] || {})[id] > 0);
-        if (sdHits.length > 0) { openSixdayModal(sdHits, 'week'); return; }
+        if (sdHits.length > 0) { openSixdayModal(sdHits, 'week', () => continueWeekSave(dirty)); return; }
       }
+      continueWeekSave(dirty);
+    }
+
+    /** 주간 저장 마지막 단계 — 인건비율 · 지원 삭제 확인 → 전송. 주 6일 안내창 뒤에도 여기로. */
+    function continueWeekSave(dirty) {
       // 예상 인건비율 확인 — 주간 저장은 한 주를 통째로 바꾸므로 더 크게 벗어날 수 있다
       const askRatio = () => {
         const ds = weekDates();
@@ -4872,12 +4878,12 @@
       });
       let payload;
       try {
-        const gz = pako.gzip(JSON.stringify({ days }));
+        const gz = pako.gzip(JSON.stringify({ days, sixday_picks: (STATE.sixdayPicks || []).slice() }));
         let bin = ''; gz.forEach(b => { bin += String.fromCharCode(b); });
         const b64 = btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
         payload = { type: 'week_save_gz', store: STATE.store, gz: b64 };
       } catch (e) {
-        payload = { type: 'week_save', store: STATE.store, days };
+        payload = { type: 'week_save', store: STATE.store, days, sixday_picks: (STATE.sixdayPicks || []).slice() };
       }
       if (JSON.stringify(payload).length > 4000) {
         say('변경 일수가 많아 한 번에 저장할 수 없습니다. 며칠씩 나눠 저장해주세요.');
