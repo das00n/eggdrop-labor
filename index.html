@@ -451,6 +451,12 @@
       padding: 4px 8px; border-radius: 6px; background: rgba(0,0,0,0.08);
       color: var(--text); font-size: 11px; font-weight: 600; border: none; cursor: pointer;
     }
+    /* 지원 근무 🎌 — 다른 매장에 지원 간 날도 그 주 6일째(휴일근로)일 수 있다 */
+    .support-hol {
+      padding: 4px 8px; border-radius: 6px; background: rgba(225,29,72,0.08); margin-right: 6px;
+      color: #e11d48; font-size: 11px; font-weight: 700; border: 1px solid rgba(225,29,72,0.35); cursor: pointer;
+    }
+    .support-hol.on { background: #e11d48; color: #fff; border-color: #e11d48; }
 
     /* 지원 모달 */
     .sup-dir-pick {
@@ -507,6 +513,17 @@
               font-variant-numeric: tabular-nums; line-height: 1.1; }
     .lr-cap { font-size: 11px; color: var(--hint); }
     .lr-msg { font-size: 12.5px; font-weight: 600; color: var(--text); margin-top: 4px; line-height: 1.45; }
+    /* 주 6일 · 🎌 미지정 차단 안내 */
+    .sdm-who { margin-top: 12px; font-size: 14px; font-weight: 700; color: var(--text); }
+    .sdm-range { color: #e11d48; }
+    .sdm-days { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 13px; font-variant-numeric: tabular-nums; }
+    .sdm-days td { padding: 5px 4px; border-bottom: 1px solid rgba(127,127,127,0.18); color: var(--text); }
+    .sdm-days tr.now td { background: rgba(225,29,72,0.08); font-weight: 700; }
+    .sdm-days .sdm-note { color: var(--hint); font-size: 11.5px; text-align: right; }
+    .sdm-days tr.now .sdm-note { color: #e11d48; }
+    .sdm-todo { margin-top: 10px; padding: 10px; border-radius: 10px; background: rgba(225,29,72,0.06);
+                border: 1px solid rgba(225,29,72,0.25); font-size: 12.5px; line-height: 1.55; color: var(--text); }
+    .sdm-todo ol { margin: 4px 0 0 18px; padding: 0; }
     .lr-days { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
     .lr-day { font-size: 11px; font-weight: 700; padding: 3px 7px; border-radius: 999px;
               background: var(--section-bg); color: var(--hint); border: 1px solid rgba(127,127,127,0.25);
@@ -571,6 +588,8 @@
     .wk-seg.duty { background: rgba(88,86,214,0.12); color: #5856d6; border-color: rgba(88,86,214,0.35); }
     .wk-seg.other { background: rgba(255,149,0,0.12); color: #b45309; border-color: rgba(255,149,0,0.4); }
     .wk-seg b { margin-left: 5px; cursor: pointer; opacity: 0.7; }
+    .wk-seg b.hol { opacity: 0.45; }
+    .wk-seg b.hol.on { opacity: 1; background: #e11d48; color: #fff; border-radius: 5px; padding: 0 3px; }
     .wk-add { padding: 3px 7px; border-radius: 7px; font-weight: 700; cursor: pointer;
               border: 1px dashed rgba(127,127,127,0.5); color: var(--hint); }
     .wk-actions { display: flex; gap: 8px; margin: 14px 0 4px; }
@@ -1065,6 +1084,26 @@
     </div>
   </div>
 
+  <!-- ───────── 주 6일 · 🎌 미지정 — 저장 차단 안내 (2026-10-15) ─────────
+       막기만 하면 매니저는 무엇을 고쳐야 할지 모른 채 같은 값을 다시 넣는다(다순님: "차단되면
+       충분히 알 수 있어야 하고, 언제부터 언제 사이에 무엇을 할지 구체적인 지침이 있어야 한다").
+       그 주 근무일을 날짜·매장별로 펴고, 어디서 무엇을 누르는지 적는다. 이번에 저장하는 날은
+       언제나 이 화면에서 고칠 수 있으므로 그 날에 바로 🎌 를 켜는 버튼을 둔다. -->
+  <div class="modal-backdrop" id="sixday-modal">
+    <div class="modal">
+      <h2 class="modal-title">⛔ 저장되지 않았습니다</h2>
+      <p class="modal-sub">
+        주 6일 이상 근무한 주는 그 중 <b>하루</b>를 <b>🎌 공휴일 근무</b>(휴일근로 · 그날 통상시급 0.5배 가산)로
+        지정해야 저장됩니다. 근무일은 <b>다른 매장 근무까지 합산</b>해 셉니다.
+      </p>
+      <div id="sdm-body"></div>
+      <div class="modal-actions">
+        <button class="modal-btn secondary" onclick="closeSixdayModal()">닫고 직접 고르기</button>
+        <button class="modal-btn primary" id="sdm-fix" onclick="sixdayQuickFix()">🎌 지정하기</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ───────── 예상 인건비율 확인 Modal ─────────
        막지 않는다. 다만 **한 번은 보게** 한다 — 배너만으로는 스크롤에 묻히고,
        저장하고 나서 방으로 경고가 와도 그때는 이미 늦다. -->
@@ -1353,6 +1392,13 @@
         }
       });
 
+      // 저장된 '지원갔음'의 시간을 되살린다 — 봇은 우리 매장 쪽 0h 기록(지원갔음 마커)에서 읽어
+      // 시간이 0 으로 내려온다. 그대로 다시 저장하면 봇이 0h 지원으로 보고 **건너뛰어** 그 줄의
+      // 🎌·공휴 가산이 빠지고, 주 근무일·52시간에서도 그 날이 빠진다(2026-10-15 상봉역점 10/22).
+      STATE.prev_support_entries = fixSupportHours(STATE.prev_support_entries);
+      for (const d of Object.keys(STATE.prev_support_by_date || {})) {
+        STATE.prev_support_by_date[d] = fixSupportHours(STATE.prev_support_by_date[d]);
+      }
       // 기존 지원 입력값 로드 (오늘 자 출퇴근로그의 자체외 row)
       if (Array.isArray(STATE.prev_support_entries)) {
         STATE.supportEntries = STATE.prev_support_entries.slice();
@@ -1372,6 +1418,13 @@
 
     // ───────── 직전 입력 복원 (저장 실패/미저장 닫힘 대비) ─────────
     function _backupKey() { return `labor_backup_${STATE.store}_${STATE.date}`; }
+    /** '지원갔음' 줄의 시간이 0 이면 출퇴근·휴게로 다시 계산한다 — 지원을 처음 넣을 때(confirmSupport)와
+     *  같은 식. 실제 근무는 상대 매장 행에 있고 우리 매장 쪽은 0h 마커라 저장분이 0 으로 내려온다. */
+    function fixSupportHours(list) {
+      if (!Array.isArray(list)) return list;
+      return list.map((sp) => (sp && sp.direction === 'out' && !(Number(sp.hours) > 0) && sp.in && sp.out)
+        ? { ...sp, hours: calcWork(sp.in, sp.out, sp.breakH || 0) } : sp);
+    }
     function _sigLoaded() {
       const w = STATE.employees
         .filter(e => STATE.entries[e.id] && STATE.entries[e.id].on)
@@ -2009,8 +2062,9 @@
           <span class="support-tag ${tag}">${dirText}</span>
           <div class="support-info">
             <div class="name">${s.name} <span class="emp-grade ${s.grade}" style="font-size:10px">${s.grade}</span></div>
-            <div class="meta">${s.other_store} · ${timeWindow} (${(s.hours || 0).toFixed(1)}h)</div>
+            <div class="meta">${s.other_store} · ${timeWindow} (${(s.hours || 0).toFixed(1)}h)${s.holiday ? ' · 🎌 공휴일 근무' : ''}</div>
           </div>
+          ${isOfficialHoliday() ? '' : `<button class="support-hol${s.holiday ? ' on' : ''}" onclick="toggleSupportRowHol(${idx})" title="공휴일 근무">${s.holiday ? '✓ 🎌' : '🎌'}</button>`}
           <button class="support-delete" onclick="removeSupport(${idx})">삭제</button>
         `;
         list.appendChild(r);
@@ -2031,7 +2085,8 @@
 
     function openSupportModal() {
       SUP_CTX = { direction: null, other_store: '', name: '', emp_id: null, grade: null,
-                  in: null, out: null, breakH: 0, break_start: null, break_end: null, hours: 0, half: false };
+                  in: null, out: null, breakH: 0, break_start: null, break_end: null, hours: 0, half: false,
+                  hol: false, holNote: null };
       document.getElementById('sup-name').value = '';
       document.getElementById('sup-info').textContent = '';
       document.getElementById('sup-manual-area').style.display = 'none';
@@ -2115,6 +2170,9 @@
       const sel = document.getElementById('sup-emp');
       const pool = supPool();
       SUP_CTX.name = ''; SUP_CTX.emp_id = null;
+      // 🎌 는 사람에 딸린 판단(그 사람의 주 근무일)이라 대상이 바뀌면 다시 고르게 한다
+      SUP_CTX.hol = false; SUP_CTX.holNote = null;
+      renderSupScope();
       document.getElementById('sup-manual-area').style.display = 'none';
       document.getElementById('sup-name').value = '';
       if (!SUP_CTX.direction) {
@@ -2133,6 +2191,7 @@
     }
 
     function supPickEmp(empId) {
+      SUP_CTX.hol = false; SUP_CTX.holNote = null;      // 사람이 바뀌면 🎌 근거도 바뀐다
       if (empId === '__manual__') {
         document.getElementById('sup-manual-area').style.display = 'block';
         SUP_CTX.emp_id = null; SUP_CTX.name = '';
@@ -2188,13 +2247,38 @@
           <div class="break-chip" onclick="openBreakModal('__SUP__')">${breakLabel}</div>
           <div class="work-hours">${workStr}</div>
         </div>
-        ${SUP_CTX.grade !== 'Crew' ? `<div class="half-row"><div class="half-chip${SUP_CTX.half ? ' active' : ''}" onclick="toggleSupHalf()">${SUP_CTX.half ? '✓ 반차 (0.5일)' : '☐ 반차 (절반 근무)'}</div></div>` : ''}
+        <div class="half-row">${SUP_CTX.grade !== 'Crew' ? `<div class="half-chip${SUP_CTX.half ? ' active' : ''}" onclick="toggleSupHalf()">${SUP_CTX.half ? '✓ 반차 (0.5일)' : '☐ 반차 (절반 근무)'}</div>` : ''}${isOfficialHoliday() ? '' : `<div class="half-chip hol-chip${SUP_CTX.hol ? ' active' : ''}" onclick="toggleSupHol()" style="margin-left:6px">${SUP_CTX.hol ? '✓ 🎌 공휴일 근무' : '☐ 🎌 공휴일 근무'}</div>`}</div>
       `;
     }
 
     function toggleSupHalf() {
       SUP_CTX.half = !SUP_CTX.half;
       renderSupScope();
+    }
+
+    // 지원 근무 🎌 (2026-10-15) — 다른 매장에 지원 간 날이 그 주 6일째일 수 있다. 근거 판정은
+    //   우리 직원(갔음)만 화면에서 한다. 지원 온 분(왔음)의 그 주 근무는 우리가 모른다 —
+    //   저장 후 봇이 전 매장을 합쳐 근거를 보고, 없으면 매장방에 알린다.
+    function toggleSupHol() {
+      if (SUP_CTX.hol) { SUP_CTX.hol = false; SUP_CTX.holNote = null; renderSupScope(); return; }
+      const done = (note) => { if (!SUP_CTX) return; SUP_CTX.hol = true; SUP_CTX.holNote = note || null; renderSupScope(); };
+      if (SUP_CTX.direction !== 'out' || !SUP_CTX.emp_id || !holNeedsReason(STATE.date, SUP_CTX.emp_id, true)) { done(null); return; }
+      askHolReason(`${SUP_CTX.name || ''} · ${STATE.date} · ${SUP_CTX.other_store || '다른 매장'}`,
+                   weekWorkdays(STATE.date, SUP_CTX.emp_id, true), done);
+    }
+    // 이미 넣은(저장된) 지원 줄의 🎌 — 새 객체로 바꿔 끼운다. 저장분(prev_support_by_date)과
+    //   같은 객체를 고치면 날짜를 오갈 때 저장 안 된 지정이 저장된 것처럼 되살아난다.
+    function toggleSupportRowHol(idx) {
+      const s = STATE.supportEntries[idx];
+      if (!s) return;
+      const put = (on, note) => {
+        STATE.supportEntries[idx] = { ...s, holiday: on, holiday_note: on ? (note || null) : null };
+        renderMain(); updateSummary();
+      };
+      if (s.holiday) { put(false); return; }
+      const emp = s.direction === 'out' ? STATE.employees.find(e => wkSupIsMine(s, e)) : null;
+      if (!emp || !holNeedsReason(STATE.date, emp.id)) { put(true, null); return; }
+      askHolReason(`${s.name} · ${STATE.date} · ${s.other_store}`, weekWorkdays(STATE.date, emp.id), (note) => put(true, note));
     }
 
     function confirmSupport() {
@@ -2235,6 +2319,8 @@
         employee_id: SUP_CTX.emp_id || null,
         grade: SUP_CTX.grade,
         half_day: SUP_CTX.grade !== 'Crew' ? !!SUP_CTX.half : false,
+        holiday: !!SUP_CTX.hol && !isOfficialHoliday(),
+        holiday_note: (SUP_CTX.hol && !isOfficialHoliday()) ? (SUP_CTX.holNote || null) : null,
         in: SUP_CTX.in,
         out: SUP_CTX.out,
         breakH: SUP_CTX.breakH,
@@ -3226,7 +3312,7 @@
       });
       const sup = (STATE.supportEntries || []).map(x =>
         [x.direction, x.other_store, x.name, x.grade, x.in || '', x.out || '',
-         Math.round((x.breakH || 0) * 10)]).sort();
+         Math.round((x.breakH || 0) * 10), !!x.holiday]).sort();
       const hq = (STATE.hqSegments || []).map(x =>
         [x.name, x.from, x.to, x.kind, x.note || '']).sort();
       return JSON.stringify([ent, sup, hq]);
@@ -3360,32 +3446,232 @@
       return officialHolidays().has(dateStr || STATE.date);
     }
 
-    // 그 주에 이 사람이 며칠 근무하나 (월~일, 화면의 미저장 편집분 반영)
-    function weekWorkdays(dateStr, empId) {
+    // ───────── 주 근무일 · 그 주의 공휴 — **전 매장 합산** (2026-10-15) ─────────
+    //   봇(src/sixday_guard.py)·월 마감 자동 지정(sixday_holiday)과 같은 규칙이어야 한다.
+    //   종전엔 우리 매장 근무만 세어, 다른 매장에 지원 간 날이 낀 주를 5일로 보고
+    //   근거 있는 🎌 에 사유를 요구했다(2026-10 상봉역점 문혜지 — 강남본점 지원 포함 주 6일).
+    //   근무일 = 우리 매장 근무 + 다른 매장 근무(저장분 other_store_work_by_date + 지금 입력 중인 지원).
+
+    /** 그 날 우리 매장 근무 {worked, hol} — 주간 입력 편집분 → 오늘 화면 → 저장분 순으로 정본. */
+    function ownDay(d, empId) {
+      const edit = (WEEK_EDITS[d] || {})[empId];
+      // 지금 보고 있는 날은 화면의 입력이 정본(저장 전 편집 반영). 단 entries 에 아직 없는
+      // 직원이면 저장분으로 판단한다 — 없다고 0일로 세면 6일째를 5일째로 잘못 본다.
+      const t = edit || (d === STATE.date && STATE.entries[empId]) || null;
+      if (t) {
+        const w = !!(t.on && t.in && t.out);
+        return { worked: w, hol: w && !!t.hol };
+      }
+      const p = ((STATE.prev_by_date_emp || {})[d] || {})[empId];
+      const w = !!(p && p.in && p.out);
+      return { worked: w, hol: w && !!p.hol };
+    }
+
+    /** 그 날 다른 매장 근무 {worked, hol}. 우리가 넣은 '지원갔음'은 지금 화면 목록이 정본이다 —
+     *  저장분(other_store_work_by_date)에도 같은 근무가 있으므로, 그 매장 행은 화면 목록으로 갈아 낀다
+     *  (화면에서 지웠으면 사라져야 하고, 🎌 를 바꿨으면 바뀐 값을 봐야 한다). */
+    function otherStoreDay(d, empId) {
+      const emp = (STATE.employees || []).find(e => e.id === empId);
+      const edit = (WEEK_EDITS[d] || {})[empId];
+      let cur = null;
+      if (edit && Array.isArray(edit.away)) cur = edit.away;
+      else if (d === STATE.date) cur = (STATE.supportEntries || []).filter(sp => sp.direction === 'out' && emp && wkSupIsMine(sp, emp));
+      const ours = new Set(((STATE.prev_support_by_date || {})[d] || [])
+        .filter(sp => sp.direction === 'out' && emp && wkSupIsMine(sp, emp)).map(sp => sp.other_store));
+      let worked = false, hol = false;
+      const stores = [];
+      for (const r of (((STATE.other_store_work_by_date || {})[d] || {})[empId] || [])) {
+        if (cur && ours.has(r.s)) continue;
+        if (Number(r.h || 0) > 0) { worked = true; if (r.hol) hol = true; if (!stores.includes(r.s)) stores.push(r.s); }
+      }
+      for (const a of (cur || [])) {
+        if (Number(a.hours || 0) > 0) {
+          worked = true; if (a.holiday) hol = true;
+          if (a.other_store && !stores.includes(a.other_store)) stores.push(a.other_store);
+        }
+      }
+      return { worked, hol, stores };
+    }
+
+    /** 그 주(월~일)에 이 사람이 며칠 근무하나 — 전 매장. assumeWorked 면 dateStr 을 근무일로 친다
+     *  (지원 입력 모달처럼 아직 목록에 넣기 전인 근무를 세야 할 때). */
+    function weekWorkdays(dateStr, empId, assumeWorked) {
       const monday = weekStartOf(dateStr);
       let n = 0;
       for (let i = 0; i < 7; i++) {
         const d = addDays(monday, i);
-        const edit = (WEEK_EDITS[d] || {})[empId];
-        if (edit) { if (edit.on && edit.in && edit.out) n++; continue; }
-        // 지금 보고 있는 날은 화면의 입력이 정본(저장 전 편집 반영).
-        // 단 entries 에 아직 없는 직원이면 저장분으로 판단한다 — 없다고 0일로 세면
-        // 6일째를 5일째로 잘못 보고 근거 있는 🎌 에 사유를 요구한다.
-        if (d === STATE.date && STATE.entries[empId]) {
-          const ent = STATE.entries[empId];
-          if (ent.on && ent.in && ent.out) n++;
-          continue;
-        }
-        const p = ((STATE.prev_by_date_emp || {})[d] || {})[empId];
-        if (p && p.in && p.out) n++;
+        if ((assumeWorked && d === dateStr) || ownDay(d, empId).worked || otherStoreDay(d, empId).worked) n++;
       }
       return n;
     }
 
+    /** 그 주에 공휴가 있나 — 일한 날 중 🎌(어느 매장이든) 또는 지정 공휴일. 봇 sixday_guard 와 같은 규칙. */
+    function weekHasHoliday(dateStr, empId) {
+      const monday = weekStartOf(dateStr);
+      for (let i = 0; i < 7; i++) {
+        const d = addDays(monday, i);
+        const own = ownDay(d, empId), oth = otherStoreDay(d, empId);
+        if (!own.worked && !oth.worked) continue;
+        if (isOfficialHoliday(d) || own.hol || oth.hol) return true;
+      }
+      return false;
+    }
+
+    // ───────── 주 6일 이상 → 🎌 없이는 저장하지 않는다 (2026-10-15 다순님) ─────────
+    //   주 6일 이상 일한 주는 그 중 하루가 휴일근로(공휴 가산)다. 매니저가 🎌 를 빠뜨린 채
+    //   마감되면 급여를 손으로 고쳐야 했다. 봇(src/sixday_guard.py)도 같은 검사로 저장을 막는다 —
+    //   여기서 먼저 막아야 전송 후에 거절당하는 왕복이 없다.
+    const SIXDAY_MIN = 6;
+
+    /** 저장할 날(dates)에 근무가 있는 우리 직원 중 그 주 6일 이상인데 공휴가 없는 사람 [{emp, week, days}].
+     *  touched(d, empId) = 이번 저장에 그 사람의 그 날 근무가 실리는가(봇도 그 사람·주만 본다). */
+    function sixdayHits(dates, touched) {
+      const hits = [], seen = new Set();
+      for (const emp of STATE.employees) {
+        if ((STATE.deletedEmployees || []).includes(emp.id)) continue;
+        for (const d of dates) {
+          if (!touched(d, emp.id)) continue;
+          const k = emp.id + '|' + weekStartOf(d);
+          if (seen.has(k)) continue;
+          seen.add(k);
+          const n = weekWorkdays(d, emp.id);
+          if (n >= SIXDAY_MIN && !weekHasHoliday(d, emp.id)) {
+            const wk = weekStartOf(d);
+            hits.push({ emp, week: wk, days: n, list: weekWorkList(wk, emp.id),
+                        // 이번 저장에 실리는 그 주 날짜 — 언제나 지금 화면에서 🎌 를 켤 수 있다
+                        now: dates.filter(x => weekStartOf(x) === wk && touched(x, emp.id)).sort() });
+          }
+        }
+      }
+      return hits;
+    }
+
+    /** 그 주 이 사람의 근무일 [{d, own, others, hol}] — 안내에 날짜·매장을 그대로 펴기 위해. */
+    function weekWorkList(dateStr, empId) {
+      const monday = weekStartOf(dateStr), out = [];
+      for (let i = 0; i < 7; i++) {
+        const d = addDays(monday, i);
+        const own = ownDay(d, empId), oth = otherStoreDay(d, empId);
+        if (own.worked || oth.worked) out.push({ d, own: own.worked, others: oth.stores || [], hol: own.hol || oth.hol });
+      }
+      return out;
+    }
+
+    const SD_WD = ['일', '월', '화', '수', '목', '금', '토'];
+    /** '2026-10-24' → '10/24(토)' — 봇 week_limit.day_label 과 같은 모양. */
+    function sdDay(d) {
+      const t = new Date(d + 'T00:00:00');
+      return `${t.getMonth() + 1}/${t.getDate()}(${SD_WD[t.getDay()]})`;
+    }
+    /** 그 주 범위 '10/19(월) ~ 10/25(일)' — 언제부터 언제 사이에 지정하는지. */
+    function sdRange(wk) { return `${sdDay(wk)} ~ ${sdDay(addDays(wk, 6))}`; }
+
+    /** 저장하려는 그 날에 🎌 를 켤 자리 — 'own'(직원 줄) · 'away'(지원 근무 줄). ctx = 'day' | 'week'. */
+    function sixdayFixKind(d, empId, ctx) {
+      if (ctx === 'week') {
+        const e = wkEntry(d, empId);
+        return (e.on && e.in && e.out) ? 'own' : 'away';
+      }
+      const t = STATE.entries[empId];
+      return (t && t.on && t.in && t.out) ? 'own' : 'away';
+    }
+
+    function sixdayMessage(hits) {
+      const lbl = (wk) => {
+        const a = wk.slice(5).split('-'), b = addDays(wk, 6).slice(5).split('-');
+        return `${+a[0]}/${+a[1]}~${+b[0]}/${+b[1]}`;
+      };
+      return `⛔ 저장되지 않았습니다 — 주 ${SIXDAY_MIN}일 이상 근무인데 🎌 공휴일 근무 지정이 없습니다.\n\n`
+        + hits.map(h => `• ${h.emp.label || h.emp.name} — ${lbl(h.week)} 주 ${h.days}일 근무\n`
+          + `  → ${sdRange(h.week)} 사이 근무일 중 하루에 🎌`).join('\n')
+        + `\n\n주 ${SIXDAY_MIN}일 이상 근무한 주는 그 중 하루가 휴일근로(공휴 가산)입니다. `
+        + `근무일은 다른 매장 근무까지 합산해 셉니다.\n\n`
+        + `그 주 근무일 중 하루에 🎌 를 지정해주세요.\n`
+        + `· 우리 매장 근무일(푸드트럭·본사 근무가 있는 날 포함) → 직원 줄의 🎌 (주간 입력은 🎌공휴)\n`
+        + `· 다른 매장에 지원 간 날 → 지원 근무 줄의 🎌 (주간 입력은 🔄 칸의 🎌)`;
+    }
+
+    // ── 차단 안내 모달 — 날짜·매장별 근무일 + 할 일 + 지금 저장하는 날에 🎌 켜기 ──
+    let SDM = null;   // {hits, ctx}
+    function openSixdayModal(hits, ctx) {
+      const el = document.getElementById('sixday-modal');
+      if (!el) { say(sixdayMessage(hits)); return; }
+      SDM = { hits, ctx };
+      const week = ctx === 'week';
+      document.getElementById('sdm-body').innerHTML = hits.map((h) => {
+        const name = h_esc(h.emp.label || h.emp.name);
+        const fixDay = h.now[h.now.length - 1];
+        const rows = h.list.map((x) => {
+          const places = [x.own ? STATE.store : null, ...x.others.map((st) => `${st} (다른 매장)`)]
+            .filter(Boolean).join(' · ');
+          const isNow = h.now.includes(x.d);
+          const note = isNow ? '← 지금 저장' : (!canEditDate(x.d) ? '마감 · 수정 불가' : '');
+          return `<tr class="${isNow ? 'now' : ''}"><td>${sdDay(x.d)}</td><td>${h_esc(places)}</td>`
+            + `<td class="sdm-note">${note}</td></tr>`;
+        }).join('');
+        const kind = fixDay ? sixdayFixKind(fixDay, h.emp.id, ctx) : 'own';
+        const where = kind === 'own'
+          ? (week ? `주간 입력 ${sdDay(fixDay)} 줄의 <b>🎌공휴</b>` : `이 화면 <b>${name}</b> 줄의 <b>☐ 🎌 공휴일 근무</b>`)
+          : (week ? `주간 입력 ${sdDay(fixDay)} 🔄 칸의 <b>🎌</b>` : `이 화면 🔄 지원 근무 줄의 <b>🎌</b>`);
+        return `<div class="sdm-who">${name} · <span class="sdm-range">${sdRange(h.week)}</span> · ${h.days}일 근무 · 🎌 없음</div>`
+          + `<table class="sdm-days">${rows}</table>`
+          + `<div class="sdm-todo"><b>👉 할 일</b><ol>`
+          + `<li><b>${sdRange(h.week)}</b> 사이 위 근무일 중 <b>하루</b>에 🎌 를 켭니다.<br>`
+          + (fixDay ? `· 가장 빠른 방법: 지금 저장하는 <b>${sdDay(fixDay)}</b> — 아래 <b>[🎌 지정]</b> 버튼, 또는 ${where}<br>` : '')
+          + `· 다른 날로 하려면: ${week ? '주간 입력에서 그 날 줄의 🎌공휴 (지원 간 날은 🔄 칸의 🎌)'
+                                        : '📅 날짜를 그 날로 바꿔 직원 줄의 🎌 (지원 간 날은 🔄 지원 근무 줄의 🎌)'}</li>`
+          + `<li>다시 <b>[${week ? '💾 주간 저장' : '저장'}]</b> 을 누릅니다.</li></ol></div>`;
+      }).join('');
+      const btn = document.getElementById('sdm-fix');
+      const fixable = hits.filter((h) => h.now.length);
+      btn.style.display = fixable.length ? '' : 'none';
+      btn.textContent = fixable.length === 1
+        ? `🎌 ${sdDay(fixable[0].now[fixable[0].now.length - 1])} 지정`
+        : `🎌 ${fixable.length}명 한 번에 지정`;
+      el.classList.add('show');
+    }
+    function closeSixdayModal() {
+      document.getElementById('sixday-modal').classList.remove('show');
+      SDM = null;
+    }
+    /** 지금 저장하는 날에 🎌 를 켠다 — 그 주가 6일 이상이라 근거가 있어 사유는 받지 않는다.
+     *  저장은 자동으로 하지 않는다: 무엇이 바뀌었는지 보고 매니저가 다시 누른다. */
+    function sixdayQuickFix() {
+      if (!SDM) return;
+      const { hits, ctx } = SDM;
+      const done = [];
+      for (const h of hits) {
+        const d = h.now[h.now.length - 1];
+        if (!d) continue;
+        const kind = sixdayFixKind(d, h.emp.id, ctx);
+        if (ctx === 'week') {
+          const e = wkEdit(d, h.emp.id);
+          if (kind === 'own') { e.hol = true; e.holNote = null; }
+          else if ((e.away || []).length) { e.away[0] = { ...e.away[0], holiday: true, holiday_note: null }; }
+          else continue;
+        } else if (kind === 'own') {
+          const t = STATE.entries[h.emp.id];
+          t.hol = true; t.holNote = null;
+        } else {
+          const i = (STATE.supportEntries || []).findIndex((sp) =>
+            sp.direction === 'out' && wkSupIsMine(sp, h.emp) && Number(sp.hours || 0) > 0);
+          if (i < 0) continue;
+          STATE.supportEntries[i] = { ...STATE.supportEntries[i], holiday: true, holiday_note: null };
+        }
+        done.push(`${h.emp.label || h.emp.name} ${sdDay(d)}`);
+      }
+      closeSixdayModal();
+      if (ctx === 'week') renderWInput(); else { renderMain(); updateSummary(); }
+      say(done.length
+        ? `🎌 공휴일 근무로 지정했습니다:\n${done.map((x) => '• ' + x).join('\n')}\n\n`
+          + `확인한 뒤 다시 [${ctx === 'week' ? '💾 주간 저장' : '저장'}] 을 눌러주세요.`
+        : '지정할 수 있는 날을 찾지 못했습니다. 안내에 나온 날짜에서 🎌 를 직접 켜주세요.');
+    }
+
     // 개별 🎌 의 근거: 지정 공휴일이거나, 그 주 6일 이상 근무(6일째가 휴일근로).
     //   둘 다 아니면 근거가 없다 — 경고하고 사유를 받는다(holiday_work.note).
-    function holNeedsReason(dateStr, empId) {
-      return !isOfficialHoliday(dateStr) && weekWorkdays(dateStr, empId) < 6;
+    function holNeedsReason(dateStr, empId, assumeWorked) {
+      return !isOfficialHoliday(dateStr) && weekWorkdays(dateStr, empId, assumeWorked) < SIXDAY_MIN;
     }
 
     // 사유 입력 modal — 콜백에 사유를 넘긴다(취소하면 지정하지 않는다)
@@ -3938,6 +4224,9 @@
         if (miss.length > 0) { say(missingInfoMessage(miss)); return; }
         const wlHits = weekLimitHits({ [STATE.date]: byEmp });
         if (wlHits.length > 0) { say(weekLimitMessage(wlHits)); return; }
+        // 주 6일 이상인데 🎌 없음 — 이번 저장에 근무가 실리는 사람만 본다(봇과 같은 범위)
+        const sdHits = sixdayHits([STATE.date], (d, id) => byEmp[id] > 0);
+        if (sdHits.length > 0) { openSixdayModal(sdHits, 'day'); return; }
       }
       // 사라지는 지원 근무가 있으면 먼저 알린다 — 인건비율보다 급하다(기록이 없어진다)
       if (askDropSupportBeforeSave(STATE.date, () => {
@@ -4124,7 +4413,14 @@
       if (!WEEK_EDITS[dateStr][empId]) WEEK_EDITS[dateStr][empId] = wkBaseEntry(dateStr, empId);
       return WEEK_EDITS[dateStr][empId];
     }
-    const _wkSig = (e) => JSON.stringify([!!e.on && !!e.in && !!e.out, e.in || '', e.out || '', Math.round((e.breakH || 0) * 10), e.break_start || '', e.break_end || '', !!e.half, _wkExtraSig(e)]);
+    // 🎌·🏖 도 지문에 넣는다 (2026-10-15) — 빠져 있던 동안 🎌 만 누른 날은 '변경 없음'으로 보여
+    //   저장 대상에서 빠졌고, 지정이 조용히 사라졌다(푸드트럭 날 🎌 가 안 된다는 문의의 원인 중 하나).
+    //   근무일의 🎌 · 휴무일의 🏖 만 친다 — 보내는 값(sendWeekPayload)과 같은 기준이어야 한다.
+    const _wkSig = (e) => {
+      const on = !!e.on && !!e.in && !!e.out;
+      return JSON.stringify([on, e.in || '', e.out || '', Math.round((e.breakH || 0) * 10), e.break_start || '', e.break_end || '',
+                             !!e.half, on && !!e.hol, !on && !!e.leave, _wkExtraSig(e)]);
+    };
     function wkDirtyDates() {
       return Object.keys(WEEK_EDITS)
         .filter(d => Object.entries(WEEK_EDITS[d]).some(([id, e]) => _wkSig(e) !== _wkSig(wkBaseEntry(d, id))))
@@ -4309,11 +4605,12 @@
       return wkSupportBase(dateStr).filter((sp) => sp.direction === 'out' && wkSupIsMine(sp, emp))
         .map((sp) => ({ other_store: sp.other_store, in: sp.in || null, out: sp.out || null,
                         break_start: sp.break_start || null, break_end: sp.break_end || null,
-                        breakH: sp.breakH || 0, hours: sp.hours || 0, half_day: !!sp.half_day }));
+                        breakH: sp.breakH || 0, hours: sp.hours || 0, half_day: !!sp.half_day,
+                        holiday: !!sp.holiday, holiday_note: sp.holiday_note || null }));
     }
     const _wkExtraSig = (e) => JSON.stringify([
       (e.segs || []).map((s) => [s.kind, s.from, s.to, s.note || '']).sort(),
-      (e.away || []).map((a) => [a.other_store, a.in || '', a.out || '', a.break_start || '', a.break_end || '', !!a.half_day]).sort(),
+      (e.away || []).map((a) => [a.other_store, a.in || '', a.out || '', a.break_start || '', a.break_end || '', !!a.half_day, !!a.holiday]).sort(),
     ]);
 
     /** 그 날짜의 hq_segments payload — 저장분(다른 직원 포함) 위에 편집한 직원 것만 갈아 끼운다. */
@@ -4338,12 +4635,16 @@
         .filter((sp) => !(sp.direction === 'out' && editedEmps.some((emp) => wkSupIsMine(sp, emp))))
         .map((sp) => ({ direction: sp.direction, other_store: sp.other_store, name: sp.name,
                         employee_id: sp.employee_id || null, grade: sp.grade, half_day: !!sp.half_day,
+                        // 🎌 도 그대로 싣는다 — 빠뜨리면 남의 줄을 고치다 그 사람의 지정이 지워진다
+                        holiday: !!sp.holiday, holiday_note: sp.holiday ? (sp.holiday_note || null) : null,
                         hours: sp.hours, in: sp.in, out: sp.out, breakH: sp.breakH,
                         break_start: sp.break_start || null, break_end: sp.break_end || null }));
       editedEmps.forEach((emp) => {
         (edits[emp.id].away || []).forEach((a) => base.push({
           direction: 'out', other_store: a.other_store, name: emp.name, employee_id: emp.id,
           grade: emp.grade, half_day: emp.grade !== 'Crew' ? !!a.half_day : false,
+          holiday: !!a.holiday && !isOfficialHoliday(dateStr),
+          holiday_note: (a.holiday && !isOfficialHoliday(dateStr)) ? (a.holiday_note || null) : null,
           hours: a.hours, in: a.in, out: a.out, breakH: a.breakH || 0,
           break_start: a.break_start || null, break_end: a.break_end || null }));
       });
@@ -4372,6 +4673,8 @@
       (e.away || []).forEach((a, i) => chips.push(
         `<span class="wk-seg other" title="다른 매장 근무(지원갔음) · ${(a.hours || 0).toFixed(1)}h">`
         + `🔄 ${h_esc(a.other_store)} ${a.in || '?'}~${a.out || '?'}`
+        // 🎌 — 다른 매장에 지원 간 날이 그 주 6일째일 수 있다 (지정 공휴일은 전원 자동이라 숨긴다)
+        + (isOfficialHoliday(d) ? '' : `<b class="hol${a.holiday ? ' on' : ''}" onclick="wkToggleAwayHol('${d}', ${i})" title="공휴일 근무">🎌</b>`)
         + `<b onclick="wkRemoveAway('${d}', ${i})" title="지우기">✕</b></span>`));
       const adds = [];
       if (on) adds.push(`<span class="wk-add" onclick="wkAddSeg('${d}', 'supervising')" title="본사 근무 — 매장 인건비에서 빠져 본사로">+🏢 본사</span>`);
@@ -4387,6 +4690,15 @@
     }
     function wkRemoveSeg(d, i) { wkEdit(d, WK_EMP).segs.splice(i, 1); renderWInput(); }
     function wkRemoveAway(d, i) { wkEdit(d, WK_EMP).away.splice(i, 1); renderWInput(); }
+    function wkToggleAwayHol(d, i) {
+      const a = (wkEdit(d, WK_EMP).away || [])[i];
+      if (!a) return;
+      if (a.holiday) { a.holiday = false; a.holiday_note = null; renderWInput(); return; }
+      const done = (note) => { a.holiday = true; a.holiday_note = note || null; renderWInput(); };
+      if (!holNeedsReason(d, WK_EMP)) { done(null); return; }
+      const emp = STATE.employees.find(x => x.id === WK_EMP) || {};
+      askHolReason(`${emp.name || ''} · ${d} · ${a.other_store}`, weekWorkdays(d, WK_EMP), done);
+    }
 
     // ── 🔄 다른 매장 근무 (지원갔음) 모달 — 주간 입력 전용. 하루 입력의 지원 모달은 방향·직원 선택까지
     //    있어 무겁다. 여기서는 직원이 이미 정해져 있으니 매장·시각만 받는다.
@@ -4518,6 +4830,8 @@
         if (missWk.length > 0) { say(missingInfoMessage(missWk)); return; }
         const wlHits = weekLimitHits(byDate);
         if (wlHits.length > 0) { say(weekLimitMessage(wlHits)); return; }
+        const sdHits = sixdayHits(dirty, (d, id) => (byDate[d] || {})[id] > 0);
+        if (sdHits.length > 0) { openSixdayModal(sdHits, 'week'); return; }
       }
       // 예상 인건비율 확인 — 주간 저장은 한 주를 통째로 바꾸므로 더 크게 벗어날 수 있다
       const askRatio = () => {
