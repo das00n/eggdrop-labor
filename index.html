@@ -3513,16 +3513,17 @@
       return n;
     }
 
-    /** 그 주에 공휴가 있나 — 일한 날 중 🎌(어느 매장이든) 또는 지정 공휴일. 봇 sixday_guard 와 같은 규칙. */
-    function weekHasHoliday(dateStr, empId) {
-      const monday = weekStartOf(dateStr);
+    /** 그 주 🎌 가 붙은 근무일 [날짜] — 어느 매장이든. 봇 sixday_guard 와 같은 규칙.
+     *  **지정 공휴일인 날은 세지 않는다**(A안, 2026-10-16 다순님) — 그 날은 전원 자동 가산이라
+     *  🎌 개수를 채워 주지 않는다. */
+    function weekHolDays(dateStr, empId) {
+      const monday = weekStartOf(dateStr), out = [];
       for (let i = 0; i < 7; i++) {
         const d = addDays(monday, i);
-        const own = ownDay(d, empId), oth = otherStoreDay(d, empId);
-        if (!own.worked && !oth.worked) continue;
-        if (isOfficialHoliday(d) || own.hol || oth.hol) return true;
+        if (isOfficialHoliday(d)) continue;
+        if (ownDay(d, empId).hol || otherStoreDay(d, empId).hol) out.push(d);   // hol 은 근무한 날만 참
       }
-      return false;
+      return out;
     }
 
     // ───────── 주 6일 이상 → 🎌 없이는 저장하지 않는다 (2026-10-15 다순님) ─────────
@@ -3530,8 +3531,12 @@
     //   마감되면 급여를 손으로 고쳐야 했다. 봇(src/sixday_guard.py)도 같은 검사로 저장을 막는다 —
     //   여기서 먼저 막아야 전송 후에 거절당하는 왕복이 없다.
     const SIXDAY_MIN = 6;
+    /** 그 주 공휴일 근무로 인정하는 일수 — 근무일수 − 5 (6일 1일 · 7일 2일, 2026-10-16 다순님).
+     *  봇 sixday_guard.holiday_quota 와 같은 값이어야 한다. */
+    function holidayQuota(n) { return Math.max(0, n - (SIXDAY_MIN - 1)); }
 
-    /** 저장할 날(dates)에 근무가 있는 우리 직원 중 그 주 6일 이상인데 공휴가 없는 사람 [{emp, week, days}].
+    /** 저장할 날(dates)에 근무가 있는 우리 직원 중 그 주 🎌 가 **필요한 만큼 없는** 사람
+     *  [{emp, week, days, quota, have, need, list, now}]. need = 허용 − 이미 있는 🎌 (7일 · 🎌 없음 → 2).
      *  touched(d, empId) = 이번 저장에 그 사람의 그 날 근무가 실리는가(봇도 그 사람·주만 본다). */
     function sixdayHits(dates, touched) {
       const hits = [], seen = new Set();
@@ -3543,9 +3548,10 @@
           if (seen.has(k)) continue;
           seen.add(k);
           const n = weekWorkdays(d, emp.id);
-          if (n >= SIXDAY_MIN && !weekHasHoliday(d, emp.id)) {
+          const quota = holidayQuota(n), have = weekHolDays(d, emp.id).length;
+          if (have < quota) {
             const wk = weekStartOf(d);
-            hits.push({ emp, week: wk, days: n, list: weekWorkList(wk, emp.id),
+            hits.push({ emp, week: wk, days: n, quota, have, need: quota - have, list: weekWorkList(wk, emp.id),
                         // 이번 저장에 실리는 그 주 날짜 — 언제나 지금 화면에서 🎌 를 켤 수 있다
                         now: dates.filter(x => weekStartOf(x) === wk && touched(x, emp.id)).sort() });
           }
@@ -3562,6 +3568,7 @@
         const own = ownDay(d, empId), oth = otherStoreDay(d, empId);
         if (own.worked || oth.worked) {
           out.push({ d, own: own.worked, others: oth.stores || [], hol: own.hol || oth.hol,
+                     official: isOfficialHoliday(d),
                      hours: Math.round(((own.hours || 0) + (oth.hours || 0)) * 100) / 100 });
         }
       }
@@ -3584,12 +3591,12 @@
         return `${+a[0]}/${+a[1]}~${+b[0]}/${+b[1]}`;
       };
       // 안내창(sixday-modal)이 없는 옛 화면용 글 안내 — 막지 않고 알린다(봇이 저장 뒤 지정한다).
-      return `⚠️ 주 ${SIXDAY_MIN}일 근무 — 🎌 공휴일 근무 지정이 없습니다.\n\n`
-        + hits.map(h => `• ${h.emp.label || h.emp.name} — ${lbl(h.week)} 주 ${h.days}일 근무\n`
-          + `  → ${sdRange(h.week)} 사이 하루가 공휴일 근무입니다`).join('\n')
-        + `\n\n주 ${SIXDAY_MIN}일 이상 근무한 주는 그 중 하루가 휴일근로(공휴 가산)입니다. `
-        + `근무일은 다른 매장 근무까지 합산해 셉니다.\n\n`
-        + `그대로 저장하면 근무가 가장 짧은 날이 자동으로 지정됩니다. 다른 날로 하려면 그 날에 🎌 를 켜주세요.\n`
+      return `⚠️ 주 ${SIXDAY_MIN}일 이상 근무 — 🎌 공휴일 근무 지정이 모자랍니다.\n\n`
+        + hits.map(h => `• ${h.emp.label || h.emp.name} — ${lbl(h.week)} 주 ${h.days}일 근무 · 🎌 ${h.have}/${h.quota}\n`
+          + `  → ${sdRange(h.week)} 사이 ${h.need}일이 더 공휴일 근무입니다`).join('\n')
+        + `\n\n주 6일 근무면 하루, 7일 근무면 이틀이 휴일근로(공휴 가산)입니다. `
+        + `근무일은 다른 매장 근무까지 합산해 세고, 지정 공휴일 근무는 따로 셉니다.\n\n`
+        + `그대로 저장하면 근무가 가장 짧은 날이 자동으로 지정됩니다(이틀이면 짧은 순으로). 다른 날로 하려면 그 날에 🎌 를 켜주세요.\n`
         + `· 우리 매장 근무일(푸드트럭·본사 근무가 있는 날 포함) → 직원 줄의 🎌 (주간 입력은 🎌공휴)\n`
         + `· 다른 매장에 지원 간 날 → 지원 근무 줄의 🎌 (주간 입력은 🔄 칸의 🎌)`;
     }
@@ -3599,17 +3606,24 @@
     //   않은 저장에 쓰는 규칙과 같다. 날짜를 누르면 바꿀 수 있고, 마감된 날은 고를 수 없다.
     //   고른 날은 sixday_picks 로 보내고 봇이 저장 뒤 그 날(그날 근무한 매장 전부)에 지정·재계산한다.
     let SDM = null;   // {hits, ctx, proceed, sel: {i: date}}
-    /** 기본 선택 — 고를 수 있는 날 중 근무가 가장 짧은 날(동률이면 이른 날). 봇 choose_days 와 같다. */
-    function sixdayDefault(list) {
-      const c = list.filter((x) => canEditDate(x.d));
-      if (!c.length) return null;
-      return c.slice().sort((a, b) => (Math.round(a.hours * 100) - Math.round(b.hours * 100)) || a.d.localeCompare(b.d))[0].d;
+    /** 기본 선택 — 고를 수 있는 날 중 근무가 짧은 날부터 need 개(동률이면 이른 날). 봇 choose_days 와 같다.
+     *  이미 🎌 인 날 · 지정 공휴일인 날 · 마감된 날은 고르지 않는다. 반환 = 날짜순 [날짜]. */
+    function sixdayDefault(list, need = 1) {
+      return list.filter((x) => canEditDate(x.d) && !x.hol && !x.official)
+        .sort((a, b) => (Math.round(a.hours * 100) - Math.round(b.hours * 100)) || a.d.localeCompare(b.d))
+        .slice(0, need).map((x) => x.d).sort();
+    }
+    /** 안내창에서 날짜를 누를 때 — 고른 날이면 빼고, 아니면 더한다. 필요한 만큼만(넘치면 먼저 고른 날을 뺀다). */
+    function sixdayToggle(sel, d, need) {
+      const cur = (sel || []).filter((x) => x !== d);
+      if (cur.length !== (sel || []).length) return cur;
+      return [...cur, d].slice(-Math.max(1, need));
     }
     function openSixdayModal(hits, ctx, proceed) {
       const el = document.getElementById('sixday-modal');
       if (!el) { say(sixdayMessage(hits)); proceed && proceed(); return; }
       SDM = { hits, ctx, proceed, sel: {} };
-      hits.forEach((h, i) => { SDM.sel[i] = sixdayDefault(h.list); });
+      hits.forEach((h, i) => { SDM.sel[i] = sixdayDefault(h.list, h.need); });
       renderSixdayModal();
       el.classList.add('show');
     }
@@ -3618,33 +3632,43 @@
       const { hits, ctx } = SDM;
       document.getElementById('sdm-body').innerHTML = hits.map((h, i) => {
         const name = h_esc(h.emp.label || h.emp.name);
-        const dflt = sixdayDefault(h.list);
+        const dflt = sixdayDefault(h.list, h.need);
         const rows = h.list.map((x) => {
           const places = [x.own ? STATE.store : null, ...x.others.map((st) => `${st} (다른 매장)`)]
             .filter(Boolean).join(' · ');
-          const can = canEditDate(x.d), on = SDM.sel[i] === x.d;
+          // 이미 🎌 인 날 · 지정 공휴일(따로 셈) · 마감된 날은 고를 수 없다
+          const can = canEditDate(x.d) && !x.hol && !x.official, on = (SDM.sel[i] || []).includes(x.d);
           const tags = [];
+          if (x.hol) tags.push('🎌 지정됨');
+          if (x.official) tags.push('지정 공휴일 · 따로 셈');
           if (h.now.includes(x.d)) tags.push('지금 저장');
-          if (x.d === dflt) tags.push('가장 짧은 날');
-          if (!can) tags.push('마감 · 선택 불가');
+          if (dflt.includes(x.d)) tags.push('짧은 날');
+          if (!canEditDate(x.d)) tags.push('마감 · 선택 불가');
           return `<tr class="${on ? 'pick' : ''}${can ? '' : ' closed'}"${can ? ` onclick="sdmPick(${i}, '${x.d}')"` : ''}>`
-            + `<td class="sdm-radio">${on ? '🎌' : (can ? '○' : '')}</td><td>${sdDay(x.d)}</td>`
+            + `<td class="sdm-radio">${on || x.hol ? '🎌' : (can ? '○' : '')}</td><td>${sdDay(x.d)}</td>`
             + `<td>${h_esc(places)}</td><td class="sdm-h">${(+x.hours || 0).toFixed(1)}h</td>`
             + `<td class="sdm-note">${tags.join(' · ')}</td></tr>`;
         }).join('');
-        const sel = SDM.sel[i];
-        return `<div class="sdm-who">${name} · <span class="sdm-range">${sdRange(h.week)}</span> · ${h.days}일 근무 · 🎌 없음</div>`
+        const sel = SDM.sel[i] || [];
+        const rest = h.need - sel.length;
+        return `<div class="sdm-who">${name} · <span class="sdm-range">${sdRange(h.week)}</span> · ${h.days}일 근무 · 🎌 ${h.have}/${h.quota}</div>`
           + `<table class="sdm-days">${rows}</table>`
-          + `<div class="sdm-todo">👉 <b>${sdRange(h.week)}</b> 사이 하루가 공휴일 근무입니다. `
-          + (sel ? `<b>${sdDay(sel)}</b> 로 지정합니다 — 다른 날로 하려면 위에서 날짜를 누르세요.` : '고를 수 있는 날이 없습니다.')
-          + `<br><span class="sdm-hint">고르지 않고 저장돼도 근무가 가장 짧은 날이 자동으로 지정됩니다 · 그 날 통상시급 0.5배 가산</span></div>`;
+          + `<div class="sdm-todo">👉 <b>${sdRange(h.week)}</b> 사이 <b>${h.need}일</b>이 더 공휴일 근무입니다. `
+          + (sel.length ? `<b>${sel.map(sdDay).join(', ')}</b> 로 지정합니다 — 다른 날로 하려면 위에서 날짜를 누르세요.`
+                        : (dflt.length ? '고르지 않으면 근무가 가장 짧은 날이 자동으로 지정됩니다.' : '고를 수 있는 날이 없습니다.'))
+          + (sel.length && rest > 0 ? ` 나머지 ${rest}일은 근무가 짧은 날로 자동 지정됩니다.` : '')
+          + `<br><span class="sdm-hint">고르지 않고 저장돼도 근무가 짧은 날부터 자동으로 지정됩니다 · 그 날 통상시급 0.5배 가산</span></div>`;
       }).join('');
       const btn = document.getElementById('sdm-fix');
-      const one = hits.length === 1 && SDM.sel[0];
-      btn.textContent = one ? `🎌 ${sdDay(SDM.sel[0])} 지정하고 ${ctx === 'week' ? '주간 저장' : '저장'}`
+      const one = hits.length === 1 && (SDM.sel[0] || []).length;
+      btn.textContent = one ? `🎌 ${SDM.sel[0].map(sdDay).join(', ')} 지정하고 ${ctx === 'week' ? '주간 저장' : '저장'}`
                             : `🎌 지정하고 ${ctx === 'week' ? '주간 저장' : '저장'}`;
     }
-    function sdmPick(i, d) { if (!SDM) return; SDM.sel[i] = d; renderSixdayModal(); }
+    function sdmPick(i, d) {
+      if (!SDM) return;
+      SDM.sel[i] = sixdayToggle(SDM.sel[i], d, SDM.hits[i].need);
+      renderSixdayModal();
+    }
     function closeSixdayModal() {
       document.getElementById('sixday-modal').classList.remove('show');
       SDM = null;
@@ -3653,16 +3677,18 @@
     function sixdayConfirm() {
       if (!SDM) return;
       const { hits, sel, proceed } = SDM;
-      STATE.sixdayPicks = hits.map((h, i) => sel[i] ? { name: h.emp.name, emp_id: h.emp.id, week: h.week, date: sel[i] } : null)
-        .filter(Boolean);
+      STATE.sixdayPicks = hits.flatMap((h, i) => (sel[i] || []).map((date) =>
+        ({ name: h.emp.name, emp_id: h.emp.id, week: h.week, date })));
       closeSixdayModal();
       if (proceed) proceed();
     }
 
-    // 개별 🎌 의 근거: 지정 공휴일이거나, 그 주 6일 이상 근무(6일째가 휴일근로).
-    //   둘 다 아니면 근거가 없다 — 경고하고 사유를 받는다(holiday_work.note).
+    // 개별 🎌 의 근거: 지정 공휴일이거나, 그 주 🎌 가 허용(근무일수 − 5: 6일 1 · 7일 2) 안 (2026-10-16).
+    //   이 🎌 를 켜면 허용을 넘게 될 때만 경고하고 사유를 받는다(holiday_work.note) — 봇 경고와 같은 판정.
     function holNeedsReason(dateStr, empId, assumeWorked) {
-      return !isOfficialHoliday(dateStr) && weekWorkdays(dateStr, empId, assumeWorked) < SIXDAY_MIN;
+      if (isOfficialHoliday(dateStr)) return false;
+      const others = weekHolDays(dateStr, empId).filter((d) => d !== dateStr).length;
+      return others + 1 > holidayQuota(weekWorkdays(dateStr, empId, assumeWorked));
     }
 
     // 사유 입력 modal — 콜백에 사유를 넘긴다(취소하면 지정하지 않는다)
@@ -3670,9 +3696,11 @@
     function askHolReason(subject, days, cb) {
       HOL_CB = cb;
       document.getElementById('hol-sub').textContent = subject;
+      const quota = holidayQuota(days);
       document.getElementById('hol-warn').innerHTML =
-        `⚠️ 이 날은 <b>지정 공휴일이 아니고</b>, 이 직원은 그 주에 <b>${days}일</b> 근무합니다.<br>`
-        + `공휴일 수당은 지정 공휴일이거나 <b>주 6일 이상</b> 근무한 6일째에 붙습니다. `
+        `⚠️ 이 날은 <b>지정 공휴일이 아니고</b>, 이 직원은 그 주에 <b>${days}일</b> 근무합니다`
+        + (quota ? ` — 공휴일 근무는 <b>${quota}일</b>까지인데 그 주에 🎌 가 이미 ${quota}개 있습니다.<br>` : `.<br>`)
+        + `공휴일 수당은 지정 공휴일이거나, 주 6일 근무면 <b>하루</b> · 7일 근무면 <b>이틀</b>까지 붙습니다. `
         + `그래도 지정하려면 사유를 남겨주세요 — 본사가 마감 때 확인합니다.`;
       document.getElementById('hol-note').value = '';
       document.getElementById('hol-modal').classList.add('show');
@@ -3699,7 +3727,7 @@
 
     function confirmHolReason() {
       const note = document.getElementById('hol-note').value.trim();
-      if (!note) { say('사유를 입력해주세요. (지정 공휴일도 주6일째도 아닌 지정입니다)'); return; }
+      if (!note) { say('사유를 입력해주세요. (지정 공휴일도 아니고 그 주 공휴일 근무 허용을 넘는 지정입니다)'); return; }
       if (!isAdequateHolReason(note)) {
         say('사유를 조금 더 구체적으로 적어주세요.\n\n'
           + '급여 지급 근거로 남고 본사가 마감 때 이 내용만 보고 판단합니다.\n'
