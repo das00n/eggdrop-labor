@@ -35,7 +35,17 @@
     "",
     "── 네이버웍스 공식 WORKS MCP (2026-10-07 연결, claude.ai 커넥터) ──",
     "  읽기 도구 24개만 올렸다. mail_send · *_create_* · *_update_* · *_delete_* · task_complete 등 쓰기는 매번 묻는다.",
-    "  도구 이름은 클라우드 세션 실측(mcp__works-mcp__*). 로컬 CLI 에서 접두사가 다르면 그쪽 이름을 따로 추가할 것."
+    "  도구 이름은 클라우드 세션 실측(mcp__works-mcp__*). 로컬 CLI 에서 접두사가 다르면 그쪽 이름을 따로 추가할 것.",
+    "",
+    "── 메일 서식 점검 훅 (2026-10-30) ─────────────────────────────",
+    "  mcp__…mail_send 직전에 hooks/mail-format-guard.mjs 가 본문을 검사한다:",
+    "  html 여부 · 웍스 저장 서명(로고 HTML) · 문단 사이 <p><br></p> → 어기면 발송을 막는다(deny).",
+    "  과거 사명 Goldenhind 가 있으면 확인(ask). 경위: 10-30 Kris 회신이 텍스트 서명·빈 줄 없이 나감.",
+    "",
+    "── 지침 최신 여부 점검 (2026-10-30, SessionStart) ──────────────",
+    "  hooks/rules-freshness-check.mjs: 작업 브랜치의 CLAUDE.md·.claude/ 가 기본 브랜치보다 옛 판이면",
+    "  세션 시작 때 '먼저 main 을 병합하라'는 안내를 세션 문맥에 넣는다. 뒤처진 브랜치에선 새 규칙이 안 보이기 때문.",
+    "  레포에 고유 SessionStart 훅이 있으면(dailyreport-keel) 덮지 말고 배열에 더할 것."
   ],
   "permissions": {
     "allow": [
@@ -47,7 +57,6 @@
       "Grep",
       "WebSearch",
       "WebFetch",
-
       "mcp__Claude_Code_Remote__list_repos",
       "mcp__Claude_Code_Remote__list_sessions",
       "mcp__Claude_Code_Remote__list_environments",
@@ -55,7 +64,6 @@
       "mcp__Claude_Code_Remote__list_triggers",
       "mcp__Claude_Code_Remote__get_trigger",
       "mcp__Claude_Code_Remote__read_documentation",
-
       "mcp__github__actions_list",
       "mcp__github__pull_request_read",
       "mcp__github__get_file_contents",
@@ -68,13 +76,11 @@
       "mcp__github__list_issues",
       "mcp__github__issue_read",
       "mcp__github__get_me",
-
       "mcp__naver-works-drive__nw_auth_status",
       "mcp__naver-works-drive__nw_drive_drives",
       "mcp__naver-works-drive__nw_drive_list",
       "mcp__naver-works-drive__nw_drive_tree",
       "mcp__naver-works-drive__nw_drive_find",
-
       "mcp__works-mcp__user_get_info",
       "mcp__works-mcp__view_organization_members",
       "mcp__works-mcp__view_group_members",
@@ -140,6 +146,27 @@
             "type": "command",
             "command": "node \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/workspace-guard.mjs\"",
             "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__.*mail_send",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/mail-format-guard.mjs\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/rules-freshness-check.mjs\"",
+            "timeout": 30
           }
         ]
       }
