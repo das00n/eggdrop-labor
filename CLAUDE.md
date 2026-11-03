@@ -66,6 +66,14 @@
 - MCP 가 안 뜨면 클라우드 환경 `Das00n` 의 설정 스크립트가 옛 판이다(`~/.eggdrop/woody-mcp.mjs` 가 없음) → 다순에게 관제탑 `tools/mcp/naver-works-drive/cloud-setup.paste.sh` 를 다시 붙여넣어 달라고 한다. 토큰 = 환경 변수 `WOODY_API_TOKEN`.
 - 방 대화에는 개인정보가 섞인다. **원문을 레포에 커밋하지 않는다.** `tg_send`(방에 글 올리기)는 내용을 보여 주고 다순 확인 뒤에만.
 
+## 📅 구글 캘린더 — 업무는 `[ED]Keel`, 개인은 `전우진`
+- **업무 일정(에그드랍 미팅·마감 등)은 `[ED]Keel` 캘린더에 넣는다.** `mcp__Google_Calendar__create_event` 에 **`calendarId` 를 반드시 준다** — 빼면 기본(primary) 캘린더 `전우진` 으로 들어간다.
+  `[ED]Keel` = `9b5e7cd574d57f23fe9026dd8d1ccbefb229c03548b21690cbfd070a257e5312@group.calendar.google.com` (바뀌었으면 `list_calendars` 에서 이름 `[ED]Keel` 로 찾는다).
+- **`전우진`(기본 캘린더)은 개인 일정 전용**이다. 업무 일정을 넣지 않는다.
+- 상대 현지 시각으로 잡은 일정은 `timeZone`(예: `Asia/Manila`)을 함께 준다. 끝나는 시각을 모르면 1시간으로 넣고 그렇다고 알린다.
+- 네이버웍스 캘린더(`mcp__works-mcp__calendar_*`)와는 별개다 — 다순이 "구글 캘린더"라고 하면 이 절을 따른다.
+- 경위: 2026-11-03 필리핀 BnS 미팅을 기본 캘린더 `전우진` 에 넣었고 다순이 직접 `[ED]Keel` 로 옮겼다 → 다순 지시로 규칙화.
+
 ## ★ 공유 Supabase 3규칙 (한국 공유 정본 `gylhxpvltnxhwjagrkts`을 건드릴 때 필수)
 1. **스키마/뷰 변경은 한 번에 한 세션만.** 다른 세션은 그 사이 읽기만.
 2. **Additive-only (Expand-Contract).** 컬럼·뷰는 지우지 말고 추가 → 모든 소비자 이전 후에만 옛 구조 제거.
