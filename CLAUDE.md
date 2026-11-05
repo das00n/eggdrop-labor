@@ -54,6 +54,7 @@
 |---|---|
 | 메일 읽기·폴더·발송 · 캘린더 · 할 일 · 게시판 · 노트 · 조직도/그룹 조회 · 드라이브 목록·폴더 생성 | **공식 WORKS MCP** `mcp__works-mcp__*` |
 | 드라이브 **이동·이름변경·복사·트리·찾기·점검·다운로드**, 조직/그룹 폴더 | **자체** `mcp__naver-works-drive__nw_*` — 공식에는 이 도구가 없다 |
+| **메일 첨부 파일 받기·열기** | **자체** `mcp__naver-works-drive__nw_mail_attachments`·`nw_mail_download` — 공식은 첨부 이름만 보이고 받는 도구가 없다. mailId 는 공식 `mail_search` 로 찾는다. MCP 가 없으면 `node /opt/eggdrop-control-tower/tools/mcp/naver-works-drive/cli.js mail_download --mailId <ID> --outDir <폴더>` |
 | **정기 작업(Routine)** — 매일 메일 수집 등 | **자체 MCP** (`eggdrop-global/tools/mcp/naver-works/`, 드라이브) — claude.ai 커넥터는 Routine 에 안 물린다 |
 | 계정 생성·정지, 조직 변경 | **둘 다 없다.** 임의로 만들지 말고 관제탑 §7-D 참조 |
 
