@@ -23,9 +23,16 @@
 4. SQL 이면 **대상 Supabase ref**(일본 `tnsizarbpgvfidsgubti` / 한국 `gylhxpvltnxhwjagrkts`)와 **확인 쿼리·기대 결과**를 함께 준다.
 5. **WSL·터미널 명령은 항상 폴더 이동(`cd`)부터 포함한다.** 다순 PC 의 레포 경로 = WSL `/mnt/c/Users/wooji/projects/<폴더>`(예: `cd /mnt/c/Users/wooji/projects/eggdrop-japan`, 관제탑은 `…/projects/control-tower`). 레포별 폴더는 관제탑 §5 인벤토리의 로컬 경로. 서버(`ssh eggdrop-auto`)에서 실행할 명령도 `cd /root/…` 부터.
 6. **명령은 WSL 기준으로 주고, 코드 블록마다 어디서 실행하는지 이름을 붙인다** — `**[WSL]**` · `**[PowerShell]**` · `**[서버 eggdrop-auto]**`. 다순은 PowerShell 창도 쓰므로 WSL 경로(`/mnt/c/…`)를 PowerShell 에 붙이면 `C:\mnt\c\…` 로 해석돼 엉뚱한 폴더에서 실행된다(실제 사고 2026-10-12: 클론이 모노레포 안에 생기고 `npm install` 이 모노레포에서 돎). PowerShell 이 꼭 필요할 때만 PowerShell 로 주고 그렇게 표시한다.
+7. **WSL 에 프로그램을 설치하는 등 관리자 권한(`sudo`)이 필요한 명령은 `sudo` 로 주지 않는다** — 비밀번호를 묻는다. 대신 **[PowerShell]** 에서 root 로 바로 여는 형태로 준다:
+   `wsl -u root -- bash -c "apt-get update && apt-get install -y <패키지>"` (설정 변경 없이 비밀번호를 묻지 않는다). `sudo` 를 비밀번호 없이 쓰게 하는 설정(`NOPASSWD`)은 WSL 안의 모든 프로그램이 묻지 않고 관리자 권한을 얻게 되므로 권하지 않는다.
+8. **WSL `git pull` 이 수백 개 파일을 ` M`(수정됨)으로 보며 `Your local changes … would be overwritten` 로 멈추면, 고친 게 아니라 줄바꿈(CRLF) 차이다** — Windows 쪽 git 으로 받은 폴더라 파일이 CRLF 로 저장돼 있고, WSL git 은 그걸 '수정'으로 본다. 그 폴더에만 `core.autocrlf true` 를 넣고 **남은 수정이 없을 때만** pull 하는 형태로 준다:
+   **[WSL]** `cd /mnt/c/Users/wooji/projects/<폴더> && git config core.autocrlf true && git status -s -uno | head -20 && [ -z "$(git status -s -uno)" ] && git pull`
+   설정 뒤에도 목록이 남으면 **진짜 로컬 수정**이다 — `checkout -- .`·`reset --hard`·`stash` 로 지우게 하지 말고 목록을 받아 보고 정한다. 처음부터 WSL 로 받은 폴더(LF)에는 넣지 않는다(셸 스크립트가 CRLF 로 바뀌어 깨진다).
 - 도입 2026-09-29, 다순 직접 요청. 전역 `~/.claude/CLAUDE.md`(`eggdrop-claude-dotfiles`)에도 같은 규칙.
 - 5번은 2026-09-30 다순 요청("wsl은 항상 폴더 이동까지 포함해서 써줘").
 - 6번은 2026-10-12 다순 요청("wsl로 주는게 더 좋다. 단 제공할때 wsl인지 powershell인지 함께 말해줘").
+- 7번은 2026-11-06 다순 요청 — 드라이브 검색 도구 설치 명령(`sudo apt-get install`)이 비밀번호를 물어 "입력 안 하게 하는 방법"으로 채택.
+- 8번은 2026-11-10 다순 요청("공통지침을 적어두자") — PC `eggdrop_automation_operation` 의 WSL `git pull` 이 970개 ` M` 으로 멈췄고 `core.autocrlf true` 한 줄로 풀렸다(관제탑 폴더 2026-10-13 과 같은 원인).
 
 ## 🛫 관제탑 (조율 단일 지점)
 - 정본: `das00n/eggdrop-control-tower` 레포의 `CONTROL-TOWER.md`.
@@ -77,6 +84,7 @@
   ② MCP 가 없으면 워커 API 를 바로: `curl -sS -H "Authorization: Bearer $WOODY_API_TOKEN" "https://dailyreport-keel.woojin-jeon415.workers.dev/api/messages?room=all&since=YYYY-MM-DD&limit=500"` (`/api/rooms` = 방 목록).
 - MCP 가 안 뜨면 클라우드 환경 `Das00n` 의 설정 스크립트가 옛 판이다(`~/.eggdrop/woody-mcp.mjs` 가 없음) → 다순에게 관제탑 `tools/mcp/naver-works-drive/cloud-setup.paste.sh` 를 다시 붙여넣어 달라고 한다. 토큰 = 환경 변수 `WOODY_API_TOKEN`.
 - 방 대화에는 개인정보가 섞인다. **원문을 레포에 커밋하지 않는다.** `tg_send`(방에 글 올리기)는 내용을 보여 주고 다순 확인 뒤에만.
+- **보고서 파일(PDF 등)도 우디가 올린다** — `tg_send` 에 `file_path`(세션 컴퓨터의 파일 경로)를 주면 글을 올린 뒤 파일이 그 글에 답장으로 붙는다(20MB, 2026-11-05). 미리보기에 파일 이름·크기가 나오니 글과 함께 다순에게 보여 준다. 결과가 "중계가 옛 판"이면 클라우드는 설정 스크립트(`cloud-setup.paste.sh`)를 다시 붙여넣고, 로컬은 관제탑 `git pull`.
 
 ## 📅 구글 캘린더 — 업무는 `[ED]Keel`, 개인은 `전우진`
 - **업무 일정(에그드랍 미팅·마감 등)은 `[ED]Keel` 캘린더에 넣는다.** `mcp__Google_Calendar__create_event` 에 **`calendarId` 를 반드시 준다** — 빼면 기본(primary) 캘린더 `전우진` 으로 들어간다.
@@ -85,6 +93,14 @@
 - 상대 현지 시각으로 잡은 일정은 `timeZone`(예: `Asia/Manila`)을 함께 준다. 끝나는 시각을 모르면 1시간으로 넣고 그렇다고 알린다.
 - 네이버웍스 캘린더(`mcp__works-mcp__calendar_*`)와는 별개다 — 다순이 "구글 캘린더"라고 하면 이 절을 따른다.
 - 경위: 2026-11-03 필리핀 BnS 미팅을 기본 캘린더 `전우진` 에 넣었고 다순이 직접 `[ED]Keel` 로 옮겼다 → 다순 지시로 규칙화.
+
+## 👔 인사 발령 공지를 올렸으면 스케줄 앱에도 반영 (2026-11-06 다순 지시)
+- 승진·직급 변경·근무지 이동(발령) 공지를 **만들어 올렸다고 다순이 말하면**, 같은 세션에서 스케줄 앱(근태봇 `employees`)의 직급·근무지도 바꾼다. 자동화는 하지 않는다.
+- **직급**: 봇 함수 `src/labor_bot.apply_grade_change`(`eggdrop_automation_operation`)로, **발효일 = 발령일**. 그날부터 저장된 근무가 새 직급 단가로 다시 계산된다.
+  공지는 이미 나갔으니 `chats={}` 로 불러 봇의 승진 공지가 **다시 나가지 않게** 한다(운영자가 미니앱에서 바꾸면 전 매장방에 공지가 또 나간다).
+- **근무지 이동**: 옛 매장에서 사유 '발령'·마지막 근무일(발령 전날)·발령 매장으로 처리하고, 새 매장에 등록한다(미니앱 직원 삭제·추가와 같은 경로).
+- 급여 계산이 바뀌는 공유 Supabase 변경이다 → **대상·직급·발효일을 표로 보여 주고 다순 확인 뒤** 반영하고, `ops_changelog` 에 남긴다.
+- 경위: 2026-11-04 공지한 11/01부 승진 3명(김영현 SM·심주희 AM·김유민 AM)이 스케줄 앱에 반영되지 않아, 11-06 신논현역점 송유현 SM이 "직급 변경 기능이 없다"고 문의해 알게 됐다.
 
 ## ★ 공유 Supabase 3규칙 (한국 공유 정본 `gylhxpvltnxhwjagrkts`을 건드릴 때 필수)
 1. **스키마/뷰 변경은 한 번에 한 세션만.** 다른 세션은 그 사이 읽기만.
