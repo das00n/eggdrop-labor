@@ -62,13 +62,17 @@
 | 메일 읽기·폴더·발송 · 캘린더 · 할 일 · 게시판 · 노트 · 조직도/그룹 조회 · 드라이브 목록·폴더 생성 | **공식 WORKS MCP** `mcp__works-mcp__*` |
 | 드라이브 **이동·이름변경·복사·트리·찾기·점검·다운로드**, 조직/그룹 폴더 | **자체** `mcp__naver-works-drive__nw_*` — 공식에는 이 도구가 없다 |
 | **메일 첨부 파일 받기·열기** | **자체** `mcp__naver-works-drive__nw_mail_attachments`·`nw_mail_download` — 공식은 첨부 이름만 보이고 받는 도구가 없다. mailId 는 공식 `mail_search` 로 찾는다. MCP 가 없으면 `node /opt/eggdrop-control-tower/tools/mcp/naver-works-drive/cli.js mail_download --mailId <ID> --outDir <폴더>` |
+| **받은 메일에 답장**(상대·웍스에서 원문과 같은 대화로 묶임) | **우디 워커** `mcp__telegram-rooms__mail_reply` — 공식 `mail_send` 는 답장이 안 된다(`RE:` 를 달아도 새 메일). `mail_search` 로 원문 mailId·folderId → `body`(아래 서명 포함 HTML) → **미리보기를 다순에게 보여 주고 확인 뒤 `confirm:true`**. 받는 사람·`RE:` 제목·답장 헤더·원문 인용·답장함 표시는 도구가 채운다. `reply_all:true` = 전체답장. 전달은 아직 없다(관제탑 결정 문서 2026-11-10 4절) |
 | **정기 작업(Routine)** — 매일 메일 수집 등 | **자체 MCP** (`eggdrop-global/tools/mcp/naver-works/`, 드라이브) — claude.ai 커넥터는 Routine 에 안 물린다 |
 | 계정 생성·정지, 조직 변경 | **둘 다 없다.** 임의로 만들지 말고 관제탑 §7-D 참조 |
 
-- **실행 전 다순 확인 필수**: `mail_send`(받는 사람·제목·본문을 먼저 보여 준다) · 모든 `*_delete_*` · 다른 사람 일정·게시글 수정. 읽기 도구는 허용 프롬프트 없이 돈다(`.claude/settings.json`).
+- **실행 전 다순 확인 필수**: `mail_send`·`mail_reply`(받는 사람·제목·본문을 먼저 보여 준다) · 모든 `*_delete_*` · 다른 사람 일정·게시글 수정. 읽기 도구는 허용 프롬프트 없이 돈다(`.claude/settings.json`).
+- **받은 메일에 답하는 메일은 어느 세션·레포든 항상 `mcp__telegram-rooms__mail_reply` 로 보낸다**(2026-11-19 다순 지시). `mail_send` 로 제목 `RE:` 메일을 만들지 않는다 — 상대 메일함에서 새 메일로 보이고, 서식 훅이 막는다(deny).
+  순서: `mail_search` 로 원문 mailId·folderId → `body`(아래 서식·저장 서명, 제목·원문 인용은 도구가 붙임) → confirm 없이 불러 미리보기 → 다순 확인 → `confirm:true`. 전체답장은 `reply_all:true`.
+  도구가 안 보이면 `ToolSearch` 로 `telegram-rooms` 를 불러온다. 그래도 없으면(중계 없는 환경) 초안만 써서 다순에게 웍스 웹 「답장」을 부탁한다. 전달(Fw)은 도구가 없어 웹 「전달」로.
 - 네이버웍스 **마스킹**이 휴대폰·주민번호 등을 `***` 로 가려서 준다. 가려진 값을 추측해 채우지 않는다.
 - **메일 사명·서명 (2026-10-20 지시 · 10-27 HTML 저장 서명으로 변경)**: 보내는 글의 사명은 **`EGGDROP Corp.`(주식회사 에그드랍)** 이다 — `Goldenhind Co., Ltd.` 는 **과거 사명**이므로 메일·보고서에 쓰지 않는다. 다만 **계약서 당사자명을 인용할 때는 그 계약서에 적힌 대로 둔다**(같은 법인의 상호변경. 예: 2023년 필리핀 가맹계약의 프랜차이저 = Goldenhind Co., Ltd.).
-  `mail_send`(API)로 보내면 **네이버웍스에 저장된 서명이 자동으로 붙지 않는다**(자동 삽입은 웍스 웹/앱 작성 화면에서만). 그래서 세션이 메일을 보낼 때는 **`contentType: "html"` 로 보내고 본문 끝에 아래 저장 서명 HTML을 그대로 붙인다** — 로고 이미지·글꼴·줄 간격까지 웹 작성창과 똑같이 나온다. 본문은 `<p>` 문단으로 짓고, 영문이면 `<p>Kind regards, Woojin Jeon</p><div><br></div>` 다음에 붙인다(다순이 웹에서 쓰는 형태). **웍스는 `<p>` 위아래 여백을 0으로 보여 주므로 문단 사이에 빈 줄 `<p><br></p>` 를 직접 넣는다**(빠뜨리면 문단이 한 덩어리로 붙는다). 금액·기간·할인 같은 **핵심 조건은 `<b>`**, 나열은 `<ul><li>` 로 쓴다 — 다순에게 보내는 초안도 **그대로 발송할 수 있는 서식**으로 보낸다(10-29 지적: 초안에 줄 띄움·굵게가 없었다). **텍스트 서명(`text` 로 이름·전화번호를 줄줄이 적는 것)은 쓰지 않는다** — 조잡하다는 지적(10-27). 다순에게 초안을 메일로 보낼 때도 같다.
+  `mail_send`(API)로 보내면 **네이버웍스에 저장된 서명이 자동으로 붙지 않는다**(자동 삽입은 웍스 웹/앱 작성 화면에서만). 그래서 세션이 메일을 보낼 때는 **`contentType: "html"` 로 보내고 본문 끝에 아래 저장 서명 HTML을 그대로 붙인다**(`mail_reply` 답장도 같다 — `body` 끝에 서명) — 로고 이미지·글꼴·줄 간격까지 웹 작성창과 똑같이 나온다. 본문은 `<p>` 문단으로 짓고, 영문이면 `<p>Kind regards, Woojin Jeon</p><div><br></div>` 다음에 붙인다(다순이 웹에서 쓰는 형태). **웍스는 `<p>` 위아래 여백을 0으로 보여 주므로 문단 사이에 빈 줄 `<p><br></p>` 를 직접 넣는다**(빠뜨리면 문단이 한 덩어리로 붙는다). 금액·기간·할인 같은 **핵심 조건은 `<b>`**, 나열은 `<ul><li>` 로 쓴다 — 다순에게 보내는 초안도 **그대로 발송할 수 있는 서식**으로 보낸다(10-29 지적: 초안에 줄 띄움·굵게가 없었다). **텍스트 서명(`text` 로 이름·전화번호를 줄줄이 적는 것)은 쓰지 않는다** — 조잡하다는 지적(10-27). 다순에게 초안을 메일로 보낼 때도 같다.
   ```html
   <div><div style="font-size: 14px; font-family: Gulim, 굴림, sans-serif;"><div style="font-size: 10pt; font-family: Helvetica, sans-serif;"><br><div style="font-family: Gulim;"><img src="https://sign.mail.worksmobile.com/signature/logo/kr1/neYZFxtwKAgZFxtwBqMmKAM./SZKwKAgmKAuqFoKmKAg9FoJjFxbmKAKqFxEqFxgqaxb."><span> </span><p style="line-height: 1;"><span style="color: rgb(30, 30, 60); font-family: NanumGothic, 나눔고딕, sans-serif;"><b><span style="font-size: 16px;"><br></span></b></span></p><p style="line-height: 1;"><span style="color: rgb(30, 30, 60); font-family: NanumGothic, 나눔고딕, sans-serif;"><b><span style="font-size: 16px;">전우진</span><span style="font-size: 11pt;">  <span style="font-size: 10pt;">Woojin Jeon</span></span></b></span></p><p style="line-height: 2.2;"><span style="color: rgb(30, 30, 60); font-size: 9pt; font-family: NanumGothic, 나눔고딕, sans-serif;">디렉터 Director</span></p><p style="line-height: 0.5;"><br></p><p style="line-height: 0.5;"><b style="color: rgb(30, 30, 60); font-family: meiryo; font-size: 9pt;"><span style="font-size: 10pt;">M</span></b><span style="font-size: 14px; color: rgb(30, 30, 60); font-family: meiryo;"><span> </span></span><span style="color: rgb(99, 99, 99); font-family: meiryo; font-size: 14px;">+82</span><span style="font-size: 14px; color: rgb(30, 30, 60); font-family: meiryo;"><span> </span></span><span style="font-size: 14px; color: rgb(30, 30, 60); font-family: meiryo;"><span style="color: rgb(99, 99, 99);">10 7410 5883</span></span><span style="font-family: meiryo; font-size: 12px;"><br></span></p><p style="line-height: 0.5;"><br></p><p style="line-height: 0.5;"><br></p><p style="line-height: 0.5;"><span style="font-size: 8pt; font-family: NanumGothic, 나눔고딕, sans-serif; color: rgb(99, 99, 99);">서울특별시 서초구 강남대로55길 9-13, J타워</span></p><p style="line-height: 1.5;"><span style="font-size: 8pt; font-family: meiryo; color: rgb(99, 99, 99);">J-tower, 9-13, Gangnam-daero 55-gil, Seocho-gu, Seoul</span></p></div></div></div></div>
   ```
@@ -137,6 +141,9 @@
 - 이 규칙은 **머지에만** 해당한다. 공유 Supabase SQL 실행·데이터 삭제·메일 발송(`mail_send`)·남의 일정 수정은 지금처럼 다순 확인 뒤.
 - 경위: 다순 "머지를 항상 물어보는 이유가 있나? 그냥 바로 알아서 머지 및 배포 하면 안되는지" → "앞으로 CI 통과하면 알아서 머지해줘, 모든 세션과 레포에서"(2026-11-03).
   명령 한 번만: 2026-11-10 automation #517 — PR 을 연 답과 머지한 답에 같은 서버 명령을 두 번 줬다 → 다순 "머지된 다음에 한번만 출력해 주는게 좋을거 같은데. 모든 세션 레포에 공통 규칙으로".
+
+## 📅 매장방 봇 일정이 바뀌면 관제탑 문서도 (2026-11-19 다순 지시)
+- 직영 매장방에 봇 글이 올라가는 **시각·내용·대상**을 바꾸면(우디·매니저 봇·원가 봇·매장 공지로 바뀐 보고 규칙 포함) 그 세션이 **같은 날** 관제탑 `docs/매장방-봇-일정.md` 를 고치고 「바뀐 기록」에 한 줄 남긴다. 다순이 따로 말하지 않아도 한다.
 
 ## 멀티세션 충돌 주의
 - 여러 세션이 같은 공유 Supabase·여러 레포를 동시에 작업합니다. 겹치면 순서 조율(관제탑 §2 레지스트리).
