@@ -1208,6 +1208,7 @@
       newEmployees: [],          // [{tempId, name, grade, base_rate (Crew만)}]
       employeeInfo: [],          // [{id(source_id), phone, birthday}] 기존 직원 정보 보완
       deletedEmployees: [],      // [empId] — 삭제 처리 대기 (저장 시 봇에 전달)
+      deletedSupport: [],        // 직접 삭제한 지원 줄 — 서버는 이것만 지운다(나머지 지원은 보존)
       deletedInfo: {},           // {empId: {reason:'퇴사'|'발령', last_day, to_store}} — 왜·언제 떠났나
       crewRateChanges: {},       // {empId: new_base_rate} — Crew 개인 시급 변경분
       rates: { SV: 20000, SM: 15000, AM: 12000, Pro: 11000, Crew: 10000 },  // 직급별 기본 시급
@@ -1485,6 +1486,7 @@
         if (on) syncBreak(STATE.entries[e.id]);
       });
       if (Array.isArray(b.support_entries)) STATE.supportEntries = b.support_entries.slice();
+      if (Array.isArray(b.deleted_support)) STATE.deletedSupport = b.deleted_support.slice();
       if (Array.isArray(b.deleted_employees)) STATE.deletedEmployees = b.deleted_employees.slice();
       if (b.deleted_employee_info) STATE.deletedInfo = { ...b.deleted_employee_info };
       renderMain();
@@ -2352,6 +2354,11 @@
     }
 
     function removeSupport(idx) {
+      // 지원 내역은 **직접 삭제했을 때만** 지워진다(2026-11-19 다순 지시) — 서버는 화면에 없는 지원을
+      // 지우지 않고 보존하므로, 삭제는 이 목록으로 따로 알린다. 서버가 상대 매장의 짝도 함께 지운다.
+      const sp = STATE.supportEntries[idx];
+      if (sp) (STATE.deletedSupport = STATE.deletedSupport || []).push(
+        { direction: sp.direction, other_store: sp.other_store, name: sp.name, employee_id: sp.employee_id || null });
       STATE.supportEntries.splice(idx, 1);
       renderMain();
       updateSummary();
@@ -2494,6 +2501,7 @@
       // 지원 entries 재구성
       const sup = (STATE.prev_support_by_date || {})[dateStr] || [];
       STATE.supportEntries = sup.slice();
+      STATE.deletedSupport = [];   // 삭제 목록은 그 날짜 것 — 날짜를 바꾸면 비운다
       // 🏢 본사 근무 구간도 그 날짜 것으로 갈아준다 — 안 하면 앞서 보던 날 것이 남아
       // 엉뚱한 날에 저장된다(저장은 그 날짜 통째 교체다).
       STATE.hqSegments = ((STATE.hq_by_date || {})[dateStr] || []).map((s) => ({ ...s }));
@@ -4302,6 +4310,7 @@
         deleted_employee_info: { ...STATE.deletedInfo },
         entries: [],
         support_entries: STATE.supportEntries.slice(),     // [{direction, other_store, name, grade, hours, mode}]
+        deleted_support: (STATE.deletedSupport || []).slice(),  // 직접 삭제한 지원 줄 — 이것만 지워진다
         // 주 6일 — 안내창에서 고른 공휴일 근무 날 [{name, emp_id, week, date}]. 봇이 저장 뒤 지정·재계산한다.
         //   비어 있으면(옛 화면 등) 봇이 근무가 가장 짧은 날을 지정한다.
         sixday_picks: (STATE.sixdayPicks || []).slice(),
@@ -4702,6 +4711,25 @@
       });
       return base;
     }
+    /** 주간 화면에서 **직접 뺀** 지원 — 편집한 직원의 저장된 '지원 보냄' 중 편집 목록에 없는 매장.
+     *  서버는 화면에 없는 지원을 보존하므로(2026-11-19), 뺀 것은 이 목록으로 알려야 지워진다. */
+    function wkDeletedSupport(dateStr) {
+      const edits = WEEK_EDITS[dateStr] || {};
+      const out = [];
+      for (const id of Object.keys(edits)) {
+        if (!Array.isArray(edits[id].away)) continue;
+        const emp = STATE.employees.find((e) => e.id === id);
+        if (!emp) continue;
+        const keep = new Set(edits[id].away.map((a) => a.other_store));
+        for (const sp of wkSupportBase(dateStr)) {
+          if (sp.direction === 'out' && wkSupIsMine(sp, emp) && !keep.has(sp.other_store)) {
+            out.push({ direction: 'out', other_store: sp.other_store, name: sp.name || emp.name,
+                       employee_id: sp.employee_id || emp.id });
+          }
+        }
+      }
+      return out;
+    }
     /** 지원 목록에서 우리 직원별 시간 {empId: h} — 지원은 방향과 무관하게 실근무다. */
     function supportHoursOf(list) {
       const out = {};
@@ -4925,7 +4953,8 @@
         // 지원·구간은 그 날짜 저장분 위에 편집한 직원 것만 갈아 끼운 목록이다(남의 것은 그대로).
         //   hq_segments 키가 **있어야** 봇이 그 날짜 구간을 이 목록으로 교체한다 — 없으면 보존한다.
         return { date: d, base_version: (STATE.prev_versions || {})[d] ?? 'EMPTY',
-                 entries, support_entries: wkSupportFor(d), hq_segments: wkSegmentsFor(d),
+                 entries, support_entries: wkSupportFor(d), deleted_support: wkDeletedSupport(d),
+                 hq_segments: wkSegmentsFor(d),
                  new_employees: [], deleted_employees: [] };
       });
       let payload;
