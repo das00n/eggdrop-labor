@@ -2552,9 +2552,30 @@
       }
       return Math.max(0, best);
     }
+    /** 그날 이 직원의 '지원갔음' 중 **이번 저장에 실리는** 상대 매장들 — wkSupportFor 와 같은 기준
+     *  (주간 편집분이 있으면 그것, 없으면 하루 화면 목록 또는 저장된 목록). */
+    function savingOutStores(d, empId) {
+      const emp = (STATE.employees || []).find(e => e.id === empId);
+      if (!emp) return new Set();
+      const edit = ((typeof WEEK_EDITS !== 'undefined' && WEEK_EDITS[d]) || {})[empId];
+      const list = (edit && Array.isArray(edit.away))
+        ? edit.away.map(a => a.other_store)
+        : wkSupportBase(d).filter(sp => sp.direction === 'out' && wkSupIsMine(sp, emp)).map(sp => sp.other_store);
+      return new Set(list.filter(Boolean));
+    }
+    /** 다른 매장 근무 기록. replaced=true 면 이번 저장이 다시 쓰는 **우리 지원의 짝**(서버 표시 m)은 뺀다 —
+     *  그 시간은 호출부가 화면의 지원 줄로 이미 센다. 빼지 않으면 반나절 지원(우리 매장 근무 + 지원갔음)을
+     *  다시 저장할 때 '다른 매장에도 근무기록' 헛경고가 뜨고 주 합계에 지원 시간이 두 번 들어간다(2026-11-19).
+     *  화면에서 지운 지원의 짝은 남긴다 — 상대 매장에 실제로 남아 있는 기록이다. */
+    function otherRows(d, empId, replaced) {
+      const rows = ((STATE.other_store_work_by_date || {})[d] || {})[empId] || [];
+      if (!replaced || !rows.some(r => r.m)) return rows;
+      const mine = savingOutStores(d, empId);
+      return rows.filter(r => !(r.m && mine.has(r.s)));
+    }
     /** 날짜·직원·그날 입력값 → 겹치는 타매장 기록 [{s, i, o, h, blocking}]. 없으면 []. */
     function dupHitsFor(dateStr, empId, ent) {
-      const rows = ((STATE.other_store_work_by_date || {})[dateStr] || {})[empId] || [];
+      const rows = otherRows(dateStr, empId, true);
       if (!rows.length) return [];
       // 우리 매장에서 근무로 넣지 않으면(휴무) 중복이 아니다 — 안내도 띄우지 않는다
       const working = !!(ent && ent.on && ent.in && ent.out)
@@ -2662,8 +2683,10 @@
           const p = ((STATE.prev_by_date_emp || {})[d] || {})[empId];
           total += p ? Number(p.hours || 0) : 0;
         }
-        // 타매장 — 우리 저장이 갈아치우지 않는 남의 매장 기록
-        for (const r of (((STATE.other_store_work_by_date || {})[d] || {})[empId] || [])) {
+        // 타매장 — 우리 저장이 갈아치우지 않는 남의 매장 기록. 이번에 저장할 날은 우리 지원의 짝을 뺀다
+        //   (overrides 에 화면의 지원 시간이 이미 들어 있다 — 봇 week_limit 의 wiped_support 와 같은 규칙).
+        const repl = !!(overrides && Object.prototype.hasOwnProperty.call(overrides, d));
+        for (const r of otherRows(d, empId, repl)) {
           total += Number(r.h || 0);
         }
       }
@@ -2675,11 +2698,11 @@
     function supportHoursToday() { return supportHoursOf(STATE.supportEntries || []); }
 
     /** 그 주 이 직원의 **타매장** 근무시간 — 우리가 손댈 수 없는 부분. */
-    function otherWeekHoursFor(empId, weekStart) {
+    function otherWeekHoursFor(empId, weekStart, byDate) {
       let total = 0;
       for (let i = 0; i < 7; i++) {
         const d = addDays(weekStart, i);
-        for (const r of (((STATE.other_store_work_by_date || {})[d] || {})[empId] || [])) {
+        for (const r of otherRows(d, empId, !!(byDate && Object.prototype.hasOwnProperty.call(byDate, d)))) {
           total += Number(r.h || 0);
         }
       }
@@ -2711,7 +2734,7 @@
           for (const d of Object.keys(byDate)) ov[d] = Number(byDate[d][emp.id] || 0);
           const h = weekHoursFor(emp.id, wk, ov);
           if (h <= WEEK_LIMIT) continue;
-          const other = otherWeekHoursFor(emp.id, wk);
+          const other = otherWeekHoursFor(emp.id, wk, byDate);
           if (other > WEEK_LIMIT && h <= weekHoursFor(emp.id, wk, null)) continue;
           const allow = Math.max(0, r1(WEEK_LIMIT - other));
           const here = r1(h - other);
@@ -2720,7 +2743,7 @@
           const byDay = [];
           for (let i = 0; i < 7; i++) {
             const d = addDays(wk, i);
-            for (const r of (((STATE.other_store_work_by_date || {})[d] || {})[emp.id] || [])) {
+            for (const r of otherRows(d, emp.id, Object.prototype.hasOwnProperty.call(byDate, d))) {
               if (Number(r.h || 0) > 0) byDay.push({ date: d, store: r.s || '타 매장',
                                                      hours: r1(Number(r.h)), now: false });
             }
@@ -4485,6 +4508,8 @@
         ds.forEach(d => {
           const e = wkEntry(d, WK_EMP);
           ov[d] = (e.on && e.in && e.out) ? calcWork(e.in, e.out, e.breakH || 0) : 0;
+          // 지원(다른 매장 근무)도 그 사람의 실근무 — 저장 검사(weekLimitHits)와 같은 값이어야 한다
+          ov[d] += supportHoursOf(wkSupportFor(d))[WK_EMP] || 0;
         });
         if (WK_EMP === null || WK_EMP === undefined) { /* 직원 없음 */ }
         else {
@@ -4492,8 +4517,7 @@
           const over = wh > WEEK_LIMIT, near = !over && wh > WEEK_LIMIT - 4;
           const color = over ? '#e11d48' : near ? '#b45309' : '#6b7280';
           const other = ds.reduce((t, d) =>
-            t + (((STATE.other_store_work_by_date || {})[d] || {})[WK_EMP] || [])
-                  .reduce((u, r) => u + Number(r.h || 0), 0), 0);
+            t + otherRows(d, WK_EMP, true).reduce((u, r) => u + Number(r.h || 0), 0), 0);
           h += `<div class="av-note" style="color:${color}">`
              + `주 합계 <b>${wh}h</b> / 상한 ${WEEK_LIMIT}h`
              + (other > 0 ? ` <span style="opacity:.8">(타매장 ${Math.round(other * 10) / 10}h 포함)</span>` : '')
