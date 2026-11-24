@@ -2298,10 +2298,14 @@
       // ★ **표기 이름(꼬리표 포함)** 으로 견준다. 맨 이름으로 견주면 진짜 동명이인
       //   (김세은A/B)까지 걸려, 남의 매장 김세은이 지원 오는 정상 입력을 막는다.
       //   꼬리표는 person_id 에서 나오므로 이 비교가 곧 '같은 사람인가'다.
+      // ★ **그 날짜 명단(rosterFor)** 에서만 찾는다. STATE.employees 에는 입력 가능 기간 안에
+      //   떠난 사람(삭제·발령)도 실려 온다 — 지난 날짜를 고치라고 싣는 것이고 화면도 날짜별로
+      //   가린다. 여기서 그들까지 보면, 중복 등록을 정리해 지운 사람이 '우리 매장에도 등록'으로
+      //   걸려 정상 지원 입력이 막힌다(2026-11-19 강남본점 장시현 — 목록엔 없는데 막힘).
       if (SUP_CTX.direction === 'in') {
         const picked = supPool().find(e => String(e.id) === String(SUP_CTX.emp_id));
         const lbl = picked ? (picked.label || picked.name) : null;
-        const mine = lbl ? STATE.employees.find(e => (e.label || e.name) === lbl) : null;
+        const mine = lbl ? rosterFor(STATE.date).find(e => (e.label || e.name) === lbl) : null;
         if (mine) {
           // say = tg.showAlert — **일반 텍스트만** 나온다. 태그를 쓰면 그대로 보인다.
           say(lbl + ' 님은 우리 매장에도 등록되어 있어 \'지원왔음\'으로 넣을 수 없습니다.\n\n'
