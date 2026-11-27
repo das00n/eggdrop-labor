@@ -1185,16 +1185,6 @@
         <button class="modal-btn secondary" onclick="closeGradeModal()">닫기</button>
         <button class="modal-btn primary" onclick="confirmGradeChange()">변경</button>
       </div>
-      <!-- 최근 변경 고치기 — 발효일을 잘못 넣었을 때 (2026-11-27) -->
-      <div id="gc-recent" style="display:none; margin-top:16px; padding-top:12px; border-top:1px solid rgba(127,127,127,0.25)">
-        <div class="modal-section-title">최근 변경 고치기</div>
-        <p class="modal-sub" id="gc-recent-info"></p>
-        <input class="form-input" id="gc-recent-date" type="date">
-        <div class="modal-actions" style="margin-top:8px">
-          <button class="modal-btn secondary" onclick="confirmGradeRevise(true)">변경 취소</button>
-          <button class="modal-btn primary" onclick="confirmGradeRevise(false)">발효일 고치기</button>
-        </div>
-      </div>
     </div>
   </div>
 
@@ -4131,7 +4121,19 @@
       di.value = _todayStr(); di.onchange = _gcUpdateWarn;
       const gp = document.getElementById('gc-grades');
       gp.innerHTML = '';
-      FT_GRADES.filter(g => g !== curG).forEach(g => {
+      // 최근 변경 — 같은 창에서 고친다(2026-11-27 다순님: "입력하는 데이터에 따라 고칠지 새로 넣을지 결정").
+      //   고치려면 지금 직급(발효일 정정)·이전 직급(취소)도 골라야 하므로 그 둘을 선택지에 더한다.
+      //   크루가 걸린 변경의 정정·취소는 운영자만(서버도 막는다).
+      const last = (emp.gh || []).slice(-1)[0];
+      GC_CTX.last = last || null;
+      const crewLast = !!last && (last[1] === 'Crew' || last[2] === 'Crew');
+      const fix = !!last && (!crewLast || STATE.is_operator);
+      const opts = FT_GRADES.slice();
+      if (fix && last[1] === 'Crew') {
+        opts.push('Crew');   // 크루로 바꾸는 게 아니라 최근 전환을 취소할 때만 쓴다
+        document.getElementById('gc-sub').textContent += ' Crew 는 최근 정직원 전환을 취소할 때만 고릅니다.';
+      }
+      opts.filter(g => g !== curG || (fix && (g === last[1] || g === last[2]))).forEach(g => {
         const chip = document.createElement('div');
         chip.className = 'grade-chip';
         chip.textContent = g;
@@ -4139,43 +4141,54 @@
         gp.appendChild(chip);
       });
       _gcUpdateWarn();
-      // 최근 변경 고치기 — 가장 최근 이력 하나. 크루가 걸린 변경(전환)은 운영자만(서버도 막는다).
-      const last = (emp.gh || []).slice(-1)[0];
-      const canRevise = !!last && (!(last[1] === 'Crew' || last[2] === 'Crew') || STATE.is_operator);
-      document.getElementById('gc-recent').style.display = canRevise ? '' : 'none';
-      if (canRevise) {
-        GC_CTX.last = last;
-        document.getElementById('gc-recent-info').textContent =
-          `${last[1]} → ${last[2]} · 발효 ${last[0]}${last[0] > _todayStr() ? ' (예정)' : ''} — 발효일을 잘못 넣었으면 고치거나 취소하세요. 바뀐 기간의 근무가 다시 계산되고 전 매장방에 정정 소식이 나갑니다.`;
-        document.getElementById('gc-recent-date').value = last[0];
-      }
       document.getElementById('gc-modal').classList.add('show');
     }
-    function confirmGradeRevise(cancel) {
-      if (!GC_CTX || !GC_CTX.last) return;
-      if (!tg) { say('텔레그램 환경에서만 고칠 수 있습니다.'); return; }
-      const last = GC_CTX.last;
-      const eff = document.getElementById('gc-recent-date').value;
-      if (!cancel && (!eff || eff === last[0])) { say('고칠 발효일을 선택해주세요'); return; }
-      const msg = cancel
-        ? `${GC_CTX.name}: ${last[1]} → ${last[2]} (발효 ${last[0]}) 변경을 취소합니다.\n${last[1]} 로 되돌리고 그 뒤 근무를 다시 계산합니다. 진행할까요?`
-        : `${GC_CTX.name}: ${last[1]} → ${last[2]}\n발효일 ${last[0]} → ${eff}\n\n바뀐 기간의 근무를 다시 계산합니다. 진행할까요?`;
-      const go = () => {
-        tg.sendData(JSON.stringify({ type: 'grade_revise', store: STATE.store,
-          change: { source_id: GC_CTX.empId, name: GC_CTX.name, effective: cancel ? null : eff } }));
-        setTimeout(() => { try { tg.close(); } catch (e) {} }, 150);
-      };
-      if (tg.showConfirm) tg.showConfirm(msg, ok => { if (ok) go(); });
-      else if (confirm(msg)) go();
+    /** ✎ 창 입력(새 직급 + 발효일)이 무엇인지 — 서버 grade_history.classify_grade_request 와 같은 규칙.
+     *  {kind: new|redate|regrade|cancel|reject, text}. 최근 변경(emp.gh 마지막) 하나와 비교한다. */
+    const FT_SET = ['SV', 'SM', 'AM', 'Pro'];
+    function classifyGradeRequest(emp, to, eff) {
+      const cur = emp.grade0 || emp.grade;
+      if (!eff) return { kind: 'reject', text: '발효일을 선택해주세요.' };
+      const gh = emp.gh || [];
+      if (!gh.length) {
+        if (to === cur) return { kind: 'reject', text: `지금 직급(${cur})과 같습니다.` };
+        if (!FT_SET.includes(to)) return { kind: 'reject', text: '정직원 → 크루 전환은 지원하지 않습니다.' };
+        return { kind: 'new', text: `${cur} → ${to} (발효 ${eff})` };
+      }
+      const [le, lf, lt] = gh[gh.length - 1];
+      const prev = gh.length > 1 ? gh[gh.length - 2] : null;
+      if (eff === le) {
+        if (to === lt) return { kind: 'reject', text: `이미 같은 변경이 있습니다(${lf} → ${lt}, 발효 ${le}).` };
+        if (to === lf) return { kind: 'cancel', text: `최근 변경(${lf} → ${lt}, 발효 ${le})을 취소합니다 — ${lf} 유지.` };
+        if (!FT_SET.includes(to)) return { kind: 'reject', text: '정직원 → 크루 전환은 지원하지 않습니다.' };
+        return { kind: 'regrade', text: `최근 변경의 직급을 고칩니다: ${lf} → ${lt} 를 ${lf} → ${to} 로 (발효 ${le}).` };
+      }
+      if (to === lt) {
+        if (prev && eff <= prev[0]) return { kind: 'reject', text: `바로 앞 변경(${prev[1]} → ${prev[2]}, 발효 ${prev[0]})보다 뒤 날짜로만 고칠 수 있습니다.` };
+        return { kind: 'redate', text: `최근 변경(${lf} → ${lt})의 발효일을 고칩니다: ${le} → ${eff}.` };
+      }
+      if (eff < le) return { kind: 'reject', text: `최근 변경(${lf} → ${lt}, 발효 ${le})보다 앞선 날짜에는 새 변경을 넣을 수 없습니다. 그 변경의 발효일을 고치려면 ${lt}, 취소하려면 ${lf} 와 발효일 ${le} 를 고르세요.` };
+      if (le > todayISO()) return { kind: 'reject', text: `발효 예정 변경(${lf} → ${lt}, 발효 ${le})이 있습니다 — 발효된 뒤에 다시 바꾸거나, 그 변경을 먼저 고치세요.` };
+      if (!FT_SET.includes(to)) return { kind: 'reject', text: '정직원 → 크루 전환은 지원하지 않습니다.' };
+      return { kind: 'new', text: `${lt} → ${to} (발효 ${eff})` };
     }
+    const GC_KIND_LABEL = { new: '새 변경', redate: '발효일 정정', regrade: '직급 정정', cancel: '변경 취소' };
     function _gcUpdateWarn() {
       const w = document.getElementById('gc-warn');
       const eff = document.getElementById('gc-date').value;
-      if (eff && eff < _todayStr()) {
-        w.innerHTML = '⚠️ <b style="color:#e11d48">과거 발효일입니다.</b> ' + eff.slice(5).replace('-','/') + '부터 오늘까지의 인건비·연장 등 성과 지표가 새 직급으로 <b>재계산</b>됩니다. 신중히 확인하세요.';
-      } else {
-        w.textContent = '발효일 전 날짜는 지금 직급, 발효일부터는 새 직급으로 계산됩니다(이미 넣어 둔 스케줄 포함).';
+      const last = GC_CTX && GC_CTX.last;
+      const lastLine = last ? `최근 변경: ${last[1]} → ${last[2]} · 발효 ${last[0]}${last[0] > _todayStr() ? ' (예정)' : ''}` : '';
+      const emp = GC_CTX && STATE.employees.find(e => e.id === GC_CTX.empId);
+      if (!GC_CTX || !GC_CTX.to || !emp) {
+        w.textContent = (lastLine ? `${lastLine} — 이 변경의 발효일을 고치려면 ${last[2]} 와 고칠 날짜, 취소하려면 ${last[1]} 와 ${last[0]} 를 고르세요. ` : '')
+          + '발효일 전 날짜는 지금 직급, 발효일부터는 새 직급으로 계산됩니다(이미 넣어 둔 스케줄 포함).';
+        return;
       }
+      const k = classifyGradeRequest(emp, GC_CTX.to, eff);
+      if (k.kind === 'reject') { w.innerHTML = '⚠️ <b style="color:#e11d48">' + h_esc(k.text) + '</b>'; return; }
+      w.innerHTML = `<b>${GC_KIND_LABEL[k.kind]}</b> — ${h_esc(k.text)}`
+        + (k.kind !== 'new' ? ' 바뀐 기간의 근무가 다시 계산되고 전 매장방에 정정 소식이 나갑니다.'
+           : (eff < _todayStr() ? ` <b style="color:#e11d48">과거 발효일</b> — ${eff.slice(5).replace('-','/')}부터 오늘까지 인건비가 재계산됩니다.` : ''));
     }
     function closeGradeModal() {
       document.getElementById('gc-modal').classList.remove('show');
@@ -4186,10 +4199,13 @@
       const eff = document.getElementById('gc-date').value;
       if (!eff) { say('발효일을 선택해주세요'); return; }
       if (!tg) { say('텔레그램 환경에서만 변경할 수 있습니다.'); return; }
+      const emp = STATE.employees.find(e => e.id === GC_CTX.empId);
+      const k = classifyGradeRequest(emp || {}, GC_CTX.to, eff);
+      if (k.kind === 'reject') { say(k.text); return; }
       const past = eff < _todayStr();
-      const msg = past
-        ? `${GC_CTX.name}: ${GC_CTX.from} → ${GC_CTX.to}\n발효일 ${eff} (과거)\n\n⚠️ ${eff}부터 오늘까지 인건비·성과 지표가 재계산됩니다. 정말 변경하시겠어요?`
-        : `${GC_CTX.name}: ${GC_CTX.from} → ${GC_CTX.to}\n발효일 ${eff}\n\n변경하시겠어요?`;
+      const msg = `${GC_CTX.name} — ${GC_KIND_LABEL[k.kind]}\n${k.text}\n\n`
+        + (k.kind !== 'new' ? '바뀐 기간의 근무를 다시 계산하고 전 매장방에 정정 소식을 보냅니다. 진행할까요?'
+           : past ? `⚠️ ${eff}부터 오늘까지 인건비·성과 지표가 재계산됩니다. 정말 변경하시겠어요?` : '변경하시겠어요?');
       const go = () => {
         tg.sendData(JSON.stringify({ type: 'grade_change', store: STATE.store,
           change: { source_id: GC_CTX.empId, name: GC_CTX.name, from: GC_CTX.from, to: GC_CTX.to, effective: eff } }));
