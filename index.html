@@ -552,6 +552,7 @@
     .wk td.lv { color: #0d9488; font-weight: 700; }
     @media (prefers-color-scheme: dark) { .wk td.lv { color: #5eead4; } }
     .wk .mk { font-size: 9px; font-weight: 700; color: #e11d48; }
+    .wk .mk.gmk, .wk-date .wk-dnum.gmk { color: #2563eb; font-weight: 700; }   /* 직급 변경일 ▲Pro부터 */
     /* 지정 공휴일 — 날짜 머리행에 표시 (개별 🎌 와 구분되게 같은 색) */
     .wk .hol-day { font-size: 9px; font-weight: 700; color: #e11d48; line-height: 1.15; }
     .wk .dcol { position: sticky; left: 0; background: var(--section-bg); font-weight: 700; z-index: 1; }
@@ -2487,10 +2488,33 @@
         if (e.grade0 === undefined) { e.grade0 = e.grade; e.rate0 = e.rate; e.base_rate0 = e.base_rate; }
         const g = gradeAt(e, dateStr);
         e.grade = g;
-        if (g === e.grade0) { e.rate = e.rate0; e.base_rate = e.base_rate0; }
-        else if (g === 'Crew') { e.rate = e.cr || e.rate0; e.base_rate = e.cb || null; }
-        else { e.rate = (STATE.rates || {})[g] || e.rate0; e.base_rate = null; }
+        e.rate = rateFor(e, g);
+        e.base_rate = g === e.grade0 ? e.base_rate0 : (g === 'Crew' ? (e.cb || null) : null);
       });
+    }
+    /** 그 직급일 때의 통상시급 — 지금 직급이면 받은 값, 크루였으면 cr, 정직원이면 직급표. */
+    function rateFor(e, g) {
+      const cur = e.grade0 || e.grade;
+      const curRate = e.rate0 !== undefined ? e.rate0 : e.rate;
+      if (g === cur) return curRate;
+      if (g === 'Crew') return e.cr || curRate;
+      return (STATE.rates || {})[g] || curRate;
+    }
+    /** 주간표 직급 표시 — 서버 grade_history.week_grades 와 같은 규칙 (2026-11-27 다순님).
+     *  badge: 주 내내 같으면 그 직급, 주 중간에 바뀌면 '이전→이후' · marks: {바뀐 날짜: '▲Pro부터'} */
+    const GRADE_ORDER = ['Crew', 'Pro', 'AM', 'SM', 'SV'];
+    function weekGradeInfo(emp, ds) {
+      if (!emp || !(emp.grade0 || emp.grade)) return { badge: '', marks: {} };
+      const gs = ds.map((d) => gradeAt(emp, d));
+      const badge = gs.every((g) => g === gs[0]) ? gs[0] : `${gs[0]}→${gs[gs.length - 1]}`;
+      const marks = {};
+      for (let i = 1; i < ds.length; i++) {
+        const a = gs[i - 1], b = gs[i];
+        if (a === b) continue;
+        const ia = GRADE_ORDER.indexOf(a), ib = GRADE_ORDER.indexOf(b);
+        marks[ds[i]] = `${(ia < 0 || ib < 0 || ib > ia) ? '▲' : '▼'}${b}부터`;
+      }
+      return { badge, marks };
     }
 
     function pickDate(dateStr) {
@@ -2837,9 +2861,11 @@
         const factor = (e.half ? 0.5 : 1) * (awayMin > 0 && workMin > 0 ? Math.max(0, 1 - Math.min(awayMin, workMin) / workMin) : 1);
         // 봇 payload 의 키는 emp.rate(통상시급) · emp.grade 다. 정직원 여부는 grade 로 가른다
         // — payload 에 full_time 같은 필드는 없다(build_miniapp_url 참고).
-        const rate = Number(emp.rate || 0);
-        if (emp.grade !== 'Crew') {
-          const std = (STATE.support_daily_hours || {})[emp.grade];
+        // 그 날짜의 직급·시급 — 주간 화면은 여러 날을 한 번에 추정한다(발효일 전후가 섞인다)
+        const g = gradeAt(emp, dateStr);
+        const rate = Number(rateFor(emp, g) || 0);
+        if (g !== 'Crew') {
+          const std = (STATE.support_daily_hours || {})[g];
           if (!std) continue;
           let day = Math.round(rate * std);
           if (md) day = Math.round(day * 21.7262 / md);   // 그 달 소정근로일수 기준
@@ -4540,7 +4566,7 @@
       if (wkEmps.length && !wkEmps.some(e => e.id === WK_EMP)) WK_EMP = wkEmps[0].id;
       h += `<select class="wk-emp" onchange="wkSelectEmp(this.value)">`
          + wkEmps.map(e => `<option value="${e.id}"${e.id === WK_EMP ? ' selected' : ''}>`
-             + `${needsInfo(e.id) ? '📇 ' : ''}${e.label || e.name} (${e.grade})</option>`).join('')
+             + `${needsInfo(e.id) ? '📇 ' : ''}${e.label || e.name} (${weekGradeInfo(e, ds).badge})</option>`).join('')
          + `</select>`;
       if (needsInfo(WK_EMP)) {
         h += `<div class="av-note" style="color:#c0392b">📇 전화번호가 없어 근무를 넣을 수 없습니다 — `
@@ -4577,6 +4603,7 @@
       // 개인 화면에 붙이면 "이 사람 때문"으로 읽힌다. 매장 단위인 📆 주간표에서 본다.
       // (저장 직전 확인 모달은 그대로 — 그때는 매장 전체가 어떻게 되는지가 판단 대상이다.)
       const wkEmp = STATE.employees.find(x => x.id === WK_EMP);
+      const wkGm = weekGradeInfo(wkEmp, ds);   // 주 중간 직급 변경 — 발효일 칸에 '▲Pro부터'
       ds.forEach((d, i) => {
         // 소속이 아니던 날 — 근무를 넣을 수 없다. 넣게 두면 발령 뒤 옛 매장에 근무가 생긴다.
         if (!onRosterAt(wkEmp, d)) {
@@ -4590,7 +4617,8 @@
         const edited = (WEEK_EDITS[d] || {})[WK_EMP] && _wkSig(wkEntry(d, WK_EMP)) !== _wkSig(wkBaseEntry(d, WK_EMP));
         h += `<div class="wk-day${on ? '' : ' is-off'}">`
            + `<span class="wk-date">${WDAYS[i]}${edited ? '✏️' : ''}${isOfficialHoliday(d) ? '🎌' : ''}`
-           + `<span class="wk-dnum">${d.slice(5).replace('-', '/')}${isOfficialHoliday(d) ? ' 공휴일' : ''}</span></span>`
+           + `<span class="wk-dnum">${d.slice(5).replace('-', '/')}${isOfficialHoliday(d) ? ' 공휴일' : ''}</span>`
+           + `${wkGm.marks[d] ? `<span class="wk-dnum gmk">${wkGm.marks[d]}</span>` : ''}</span>`
            + `<button type="button" class="wk-toggle" onclick="wkToggle('${d}')">${on ? '근무' : '휴무'}</button>`;
         if (on) {
           const emp = STATE.employees.find(x => x.id === WK_EMP);
@@ -4598,7 +4626,7 @@
              + `<span class="wk-tilde">~</span>`
              + `<button type="button" class="wk-chip" onclick="wkOpenTime('${d}','out')">${e.out}</button>`
              + `<button type="button" class="wk-chip wk-break" onclick="wkOpenBreak('${d}')" title="휴게">☕${(e.breakH || 0).toFixed(1)}</button>`
-             + (emp && emp.grade !== 'Crew' ? `<button type="button" class="wk-mini${e.half ? ' on-half' : ''}" onclick="wkToggleHalf('${d}')" title="반차">반</button>` : '')
+             + (emp && gradeAt(emp, d) !== 'Crew' ? `<button type="button" class="wk-mini${e.half ? ' on-half' : ''}" onclick="wkToggleHalf('${d}')" title="반차">반</button>` : '')
              // 지정 공휴일은 전원 자동 — 날짜(wk-date)에 이미 표시했고 개별 토글은 숨긴다
              + (isOfficialHoliday(d) ? ''
                 : `<button type="button" class="wk-mini${e.hol ? ' on-hol' : ''}" onclick="wkToggleHol('${d}')" title="공휴일 근무">🎌공휴</button>`);
@@ -4740,7 +4768,7 @@
       editedEmps.forEach((emp) => {
         (edits[emp.id].away || []).forEach((a) => base.push({
           direction: 'out', other_store: a.other_store, name: emp.name, employee_id: emp.id,
-          grade: emp.grade, half_day: emp.grade !== 'Crew' ? !!a.half_day : false,
+          grade: gradeAt(emp, dateStr), half_day: gradeAt(emp, dateStr) !== 'Crew' ? !!a.half_day : false,
           holiday: !!a.holiday && !isOfficialHoliday(dateStr),
           holiday_note: (a.holiday && !isOfficialHoliday(dateStr)) ? (a.holiday_note || null) : null,
           hours: a.hours, in: a.in, out: a.out, breakH: a.breakH || 0,
@@ -4795,7 +4823,7 @@
         + `<b onclick="wkRemoveAway('${d}', ${i})" title="지우기">✕</b></span>`));
       const adds = [];
       if (on) adds.push(`<span class="wk-add" onclick="wkAddSeg('${d}', 'supervising')" title="본사 근무 — 매장 인건비에서 빠져 본사로">+🏢 본사</span>`);
-      if (on && HQ_DUTY_GRADES.includes(emp && emp.grade)) adds.push(`<span class="wk-add" onclick="wkAddSeg('${d}', 'manager_duty')" title="점장 업무 — 매장 근무의 일환, 인건비 변동 없음">+📋 점장</span>`);
+      if (on && emp && HQ_DUTY_GRADES.includes(gradeAt(emp, d))) adds.push(`<span class="wk-add" onclick="wkAddSeg('${d}', 'manager_duty')" title="점장 업무 — 매장 근무의 일환, 인건비 변동 없음">+📋 점장</span>`);
       adds.push(`<span class="wk-add" onclick="wkOpenAway('${d}')" title="다른 매장 근무(지원) — 하루 통째로도, 우리 매장 근무와 나눠서도">+🔄 다른 매장</span>`);
       return `<div class="wk-sub">${chips.join('')}${adds.join('')}</div>`;
     }
@@ -4834,7 +4862,7 @@
       document.getElementById('wka-from').value = (e.on && e.out) ? e.out : '09:00';
       document.getElementById('wka-to').value = (e.on && e.out) ? minToTime(Math.min(timeToMin(e.out) + 240, 1439)) : '18:00';
       document.getElementById('wka-nobreak').checked = false;
-      document.getElementById('wka-half').style.display = emp.grade !== 'Crew' ? '' : 'none';
+      document.getElementById('wka-half').style.display = (emp.id && gradeAt(emp, d) !== 'Crew') ? '' : 'none';
       document.getElementById('wka-half-chk').checked = false;
       document.getElementById('wk-away-modal').classList.add('show');
     }
@@ -4875,7 +4903,7 @@
       if (!(hours > 0)) { say('근무 시간이 0입니다. 시각을 확인해주세요.'); return; }
       e.away = e.away || [];
       e.away.push({ other_store: store, in: frm, out: to, break_start: w.start, break_end: w.end, breakH, hours,
-                    half_day: emp.grade !== 'Crew' && document.getElementById('wka-half-chk').checked });
+                    half_day: !!emp.id && gradeAt(emp, WKA_CTX.date) !== 'Crew' && document.getElementById('wka-half-chk').checked });
       closeWkAwayModal();
       renderWInput();
     }
@@ -4976,7 +5004,7 @@
         const entries = STATE.employees.map(emp => {
           const e = wkEntry(d, emp.id);
           const on = e.on && e.in && e.out;
-          return { id: emp.id, name: emp.name, grade: emp.grade,
+          return { id: emp.id, name: emp.name, grade: gradeAt(emp, d),
                    in: on ? e.in : null, out: on ? e.out : null,
                    breakH: on ? (e.breakH || 0) : 0,
                    break_start: on ? (e.break_start || null) : null,
@@ -5069,8 +5097,11 @@
       h += `<div class="wk-wrap"><table class="wk"><tr><th class="dcol">직원</th>${ds.map((d, i) => `<th>${d.slice(5).replace('-', '/')}<br>${WDAYS[i]}${isOfficialHoliday(d) ? '<br><span class="hol-day">🎌 공휴일</span>' : ''}${rateBadge(d)}</th>`).join('')}</tr>`;
       emps.forEach(e => {
         // 직급 — 이름 위 줄, 가운데 정렬 (명단 외 ※ 직원은 직급 미상 → 생략)
-        h += `<tr><td class="dcol">${e.grade ? `<span class="grade">${e.grade}</span>` : ''}${e.name}</td>`;
+        //   지금 직급이 아니라 **그 주의 직급**. 주 중간에 바뀌면 'Crew→Pro' + 발효일 칸 '▲Pro부터'.
+        const gi = weekGradeInfo(e, ds);
+        h += `<tr><td class="dcol">${gi.badge ? `<span class="grade">${gi.badge}</span>` : ''}${e.name}</td>`;
         h += ds.map((d, i) => {
+          const gm = gi.marks[d] ? `<span class="mk gmk">${gi.marks[d]}</span><br>` : '';
           const o = dayMaps[i][e.id];
           if (o) {
             // 지정 공휴일인 날은 개별 🎌 를 붙이지 않는다 (머리행에 이미 표시)
@@ -5081,9 +5112,9 @@
             const segMk = (away.length ? '🏢' : '') + (duty.length ? '📋' : '');
             const segTip = segs.map((s) => `${hqIcon(s.kind)} ${hqKindLabel(s.kind)} ${s.from}~${s.to}`).join(' · ');
             const mk = (o.half ? '반차' : '') + (o.half && hol ? '·' : '') + (hol ? '🎌' : '') + segMk;
-            return `<td${segTip ? ` title="${h_esc(segTip)}"` : ''}>${o.in}<br>${o.out}${mk ? `<br><span class="mk">${mk}</span>` : ''}</td>`;
+            return `<td${segTip ? ` title="${h_esc(segTip)}"` : ''}>${gm}${o.in}<br>${o.out}${mk ? `<br><span class="mk">${mk}</span>` : ''}</td>`;
           }
-          return dayLeave(d, e.id) ? '<td class="lv">연차</td>' : '<td class="off">—</td>';
+          return dayLeave(d, e.id) ? `<td class="lv">${gm}연차</td>` : `<td class="off">${gm}—</td>`;
         }).join('');
         h += `</tr>`;
       });
