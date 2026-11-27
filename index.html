@@ -4618,7 +4618,8 @@
         h += `<div class="wk-day${on ? '' : ' is-off'}">`
            + `<span class="wk-date">${WDAYS[i]}${edited ? '✏️' : ''}${isOfficialHoliday(d) ? '🎌' : ''}`
            + `<span class="wk-dnum">${d.slice(5).replace('-', '/')}${isOfficialHoliday(d) ? ' 공휴일' : ''}</span>`
-           + `${wkGm.marks[d] ? `<span class="wk-dnum gmk">${wkGm.marks[d]}</span>` : ''}</span>`
+           // 날짜 칸이 좁아(42px) '▲Pro부' / '터' 로 갈린다 — '부터' 앞에서 줄을 바꾼다
+           + `${wkGm.marks[d] ? `<span class="wk-dnum gmk">${wkGm.marks[d].replace('부터', '<br>부터')}</span>` : ''}</span>`
            + `<button type="button" class="wk-toggle" onclick="wkToggle('${d}')">${on ? '근무' : '휴무'}</button>`;
         if (on) {
           const emp = STATE.employees.find(x => x.id === WK_EMP);
