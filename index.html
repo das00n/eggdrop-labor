@@ -1182,8 +1182,18 @@
       <input class="form-input" id="gc-date" type="date">
       <p class="modal-sub" id="gc-warn" style="margin-top:8px"></p>
       <div class="modal-actions">
-        <button class="modal-btn secondary" onclick="closeGradeModal()">취소</button>
+        <button class="modal-btn secondary" onclick="closeGradeModal()">닫기</button>
         <button class="modal-btn primary" onclick="confirmGradeChange()">변경</button>
+      </div>
+      <!-- 최근 변경 고치기 — 발효일을 잘못 넣었을 때 (2026-11-27) -->
+      <div id="gc-recent" style="display:none; margin-top:16px; padding-top:12px; border-top:1px solid rgba(127,127,127,0.25)">
+        <div class="modal-section-title">최근 변경 고치기</div>
+        <p class="modal-sub" id="gc-recent-info"></p>
+        <input class="form-input" id="gc-recent-date" type="date">
+        <div class="modal-actions" style="margin-top:8px">
+          <button class="modal-btn secondary" onclick="confirmGradeRevise(true)">변경 취소</button>
+          <button class="modal-btn primary" onclick="confirmGradeRevise(false)">발효일 고치기</button>
+        </div>
       </div>
     </div>
   </div>
@@ -4129,7 +4139,34 @@
         gp.appendChild(chip);
       });
       _gcUpdateWarn();
+      // 최근 변경 고치기 — 가장 최근 이력 하나. 크루가 걸린 변경(전환)은 운영자만(서버도 막는다).
+      const last = (emp.gh || []).slice(-1)[0];
+      const canRevise = !!last && (!(last[1] === 'Crew' || last[2] === 'Crew') || STATE.is_operator);
+      document.getElementById('gc-recent').style.display = canRevise ? '' : 'none';
+      if (canRevise) {
+        GC_CTX.last = last;
+        document.getElementById('gc-recent-info').textContent =
+          `${last[1]} → ${last[2]} · 발효 ${last[0]}${last[0] > _todayStr() ? ' (예정)' : ''} — 발효일을 잘못 넣었으면 고치거나 취소하세요. 바뀐 기간의 근무가 다시 계산되고 전 매장방에 정정 소식이 나갑니다.`;
+        document.getElementById('gc-recent-date').value = last[0];
+      }
       document.getElementById('gc-modal').classList.add('show');
+    }
+    function confirmGradeRevise(cancel) {
+      if (!GC_CTX || !GC_CTX.last) return;
+      if (!tg) { say('텔레그램 환경에서만 고칠 수 있습니다.'); return; }
+      const last = GC_CTX.last;
+      const eff = document.getElementById('gc-recent-date').value;
+      if (!cancel && (!eff || eff === last[0])) { say('고칠 발효일을 선택해주세요'); return; }
+      const msg = cancel
+        ? `${GC_CTX.name}: ${last[1]} → ${last[2]} (발효 ${last[0]}) 변경을 취소합니다.\n${last[1]} 로 되돌리고 그 뒤 근무를 다시 계산합니다. 진행할까요?`
+        : `${GC_CTX.name}: ${last[1]} → ${last[2]}\n발효일 ${last[0]} → ${eff}\n\n바뀐 기간의 근무를 다시 계산합니다. 진행할까요?`;
+      const go = () => {
+        tg.sendData(JSON.stringify({ type: 'grade_revise', store: STATE.store,
+          change: { source_id: GC_CTX.empId, name: GC_CTX.name, effective: cancel ? null : eff } }));
+        setTimeout(() => { try { tg.close(); } catch (e) {} }, 150);
+      };
+      if (tg.showConfirm) tg.showConfirm(msg, ok => { if (ok) go(); });
+      else if (confirm(msg)) go();
     }
     function _gcUpdateWarn() {
       const w = document.getElementById('gc-warn');
