@@ -1171,7 +1171,7 @@
     </div>
   </div>
 
-  <!-- 직급 변경 Modal (운영자 전용) -->
+  <!-- 직급 변경 Modal (운영자 + SV·SM) -->
   <div class="modal-backdrop" id="gc-modal">
     <div class="modal">
       <h2 class="modal-title" id="gc-title">직급 변경</h2>
@@ -3088,7 +3088,7 @@
             ${(!emp.isNew && !past && !emp.has_info)
               ? `<span class="info-need" onclick="openInfoModal('${emp.id}')" title="전화번호·생년월일 등록">📇 정보</span>`
               : ''}
-            ${(!emp.isNew && ((emp.grade0 || emp.grade) === 'Crew' ? STATE.is_operator : STATE.can_grade))
+            ${(!emp.isNew && STATE.can_grade)   /* 크루 전환도 SV·SM·운영자 (2026-11-27 다순님) */
               ? `<span class="emp-grade ${emp.grade}" style="cursor:pointer" onclick="openGradeModal('${emp.id}')" title="직급 변경">${emp.grade} ✎</span>`
               : `<span class="emp-grade ${emp.grade}">${emp.grade}</span>`}
             ${crewRateChip}
@@ -4100,7 +4100,7 @@
       say('저장 시 함께 등록됩니다');
     }
 
-    // ───────── 직급 변경 (운영자 전용) ─────────
+    // ───────── 직급 변경 (운영자 + SV·SM — 크루 전환 포함) ─────────
     let GC_CTX = null;
     function _todayStr() {
       const d = new Date(); const p = n => String(n).padStart(2, '0');
@@ -4111,7 +4111,7 @@
       if (!emp) return;
       const curG = emp.grade0 || emp.grade;   // 지금 직급 — 보고 있는 날짜의 직급이 아니다
       GC_CTX = { empId, name: emp.name, from: curG, to: null };
-      const conv = curG === 'Crew';   // 크루 → 정직원 전환 (운영자 전용, 2026-11-27)
+      const conv = curG === 'Crew';   // 크루 → 정직원 전환 (2026-11-27, 운영자 + SV·SM)
       document.getElementById('gc-title').textContent = conv
         ? `${emp.name} 정직원 전환 (현재 Crew)` : `${emp.name} 직급 변경 (현재 ${curG})`;
       document.getElementById('gc-sub').textContent = conv
@@ -4123,11 +4123,9 @@
       gp.innerHTML = '';
       // 최근 변경 — 같은 창에서 고친다(2026-11-27 다순님: "입력하는 데이터에 따라 고칠지 새로 넣을지 결정").
       //   고치려면 지금 직급(발효일 정정)·이전 직급(취소)도 골라야 하므로 그 둘을 선택지에 더한다.
-      //   크루가 걸린 변경의 정정·취소는 운영자만(서버도 막는다).
       const last = (emp.gh || []).slice(-1)[0];
       GC_CTX.last = last || null;
-      const crewLast = !!last && (last[1] === 'Crew' || last[2] === 'Crew');
-      const fix = !!last && (!crewLast || STATE.is_operator);
+      const fix = !!last;
       const opts = FT_GRADES.slice();
       if (fix && last[1] === 'Crew') {
         opts.push('Crew');   // 크루로 바꾸는 게 아니라 최근 전환을 취소할 때만 쓴다
