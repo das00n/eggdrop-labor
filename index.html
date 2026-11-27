@@ -1174,7 +1174,7 @@
   <div class="modal-backdrop" id="gc-modal">
     <div class="modal">
       <h2 class="modal-title" id="gc-title">직급 변경</h2>
-      <p class="modal-sub">정직원 간(SV/SM/AM/Pro) 변경만 가능합니다. 크루 전환은 신규 등록으로 진행하세요.</p>
+      <p class="modal-sub" id="gc-sub">정직원 간(SV/SM/AM/Pro) 변경만 가능합니다. 정직원 → 크루 전환은 지원하지 않습니다.</p>
       <div class="modal-section-title">새 직급</div>
       <div class="grade-picker" id="gc-grades"></div>
       <div class="modal-section-title" style="margin-top:12px">발효일 (이 날짜부터 새 직급 적용)</div>
@@ -3037,7 +3037,7 @@
             ${(!emp.isNew && !past && !emp.has_info)
               ? `<span class="info-need" onclick="openInfoModal('${emp.id}')" title="전화번호·생년월일 등록">📇 정보</span>`
               : ''}
-            ${(STATE.can_grade && !emp.isNew && emp.grade !== 'Crew')
+            ${(!emp.isNew && (emp.grade === 'Crew' ? STATE.is_operator : STATE.can_grade))
               ? `<span class="emp-grade ${emp.grade}" style="cursor:pointer" onclick="openGradeModal('${emp.id}')" title="직급 변경">${emp.grade} ✎</span>`
               : `<span class="emp-grade ${emp.grade}">${emp.grade}</span>`}
             ${crewRateChip}
@@ -4059,9 +4059,15 @@
       const emp = STATE.employees.find(e => e.id === empId);
       if (!emp) return;
       GC_CTX = { empId, name: emp.name, from: emp.grade, to: null };
-      document.getElementById('gc-title').textContent = `${emp.name} 직급 변경 (현재 ${emp.grade})`;
+      const conv = emp.grade === 'Crew';   // 크루 → 정직원 전환 (운영자 전용, 2026-11-27)
+      document.getElementById('gc-title').textContent = conv
+        ? `${emp.name} 정직원 전환 (현재 Crew)` : `${emp.name} 직급 변경 (현재 ${emp.grade})`;
+      document.getElementById('gc-sub').textContent = conv
+        ? '같은 직원 그대로 정직원으로 바꿉니다 — 삭제 후 새로 등록하지 마세요(근무기록이 지워집니다). 발효일부터의 근무가 정직원 일급으로 다시 계산됩니다.'
+        : '정직원 간(SV/SM/AM/Pro) 변경만 가능합니다. 정직원 → 크루 전환은 지원하지 않습니다.';
       const di = document.getElementById('gc-date');
       di.value = _todayStr(); di.onchange = _gcUpdateWarn;
+      di.max = conv ? _todayStr() : '';   // 전환은 발효일이 지난 뒤(당일 포함)만 — 서버도 막는다
       const gp = document.getElementById('gc-grades');
       gp.innerHTML = '';
       FT_GRADES.filter(g => g !== emp.grade).forEach(g => {
@@ -4091,6 +4097,7 @@
       if (!GC_CTX || !GC_CTX.to) { say('새 직급을 선택해주세요'); return; }
       const eff = document.getElementById('gc-date').value;
       if (!eff) { say('발효일을 선택해주세요'); return; }
+      if (GC_CTX.from === 'Crew' && eff > _todayStr()) { say('정직원 전환은 발효일이 지난 뒤(당일 포함) 처리해주세요.'); return; }
       if (!tg) { say('텔레그램 환경에서만 변경할 수 있습니다.'); return; }
       const past = eff < _todayStr();
       const msg = past
