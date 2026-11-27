@@ -552,7 +552,7 @@
     .wk td.lv { color: #0d9488; font-weight: 700; }
     @media (prefers-color-scheme: dark) { .wk td.lv { color: #5eead4; } }
     .wk .mk { font-size: 9px; font-weight: 700; color: #e11d48; }
-    .wk .mk.gmk, .wk-date .wk-dnum.gmk { color: #2563eb; font-weight: 700; }   /* 직급 변경일 ▲Pro부터 */
+    .wk .mk.gmk, .wk-date .wk-dnum.gmk { color: #2563eb; font-weight: 700; }   /* 직급 변경일 →Pro */
     /* 지정 공휴일 — 날짜 머리행에 표시 (개별 🎌 와 구분되게 같은 색) */
     .wk .hol-day { font-size: 9px; font-weight: 700; color: #e11d48; line-height: 1.15; }
     .wk .dcol { position: sticky; left: 0; background: var(--section-bg); font-weight: 700; z-index: 1; }
@@ -2501,8 +2501,7 @@
       return (STATE.rates || {})[g] || curRate;
     }
     /** 주간표 직급 표시 — 서버 grade_history.week_grades 와 같은 규칙 (2026-11-27 다순님).
-     *  badge: 주 내내 같으면 그 직급, 주 중간에 바뀌면 '이전→이후' · marks: {바뀐 날짜: '▲Pro부터'} */
-    const GRADE_ORDER = ['Crew', 'Pro', 'AM', 'SM', 'SV'];
+     *  badge: 주 내내 같으면 그 직급, 주 중간에 바뀌면 '이전→이후' · marks: {바뀐 날짜: '→Pro'} */
     function weekGradeInfo(emp, ds) {
       if (!emp || !(emp.grade0 || emp.grade)) return { badge: '', marks: {} };
       const gs = ds.map((d) => gradeAt(emp, d));
@@ -2511,8 +2510,7 @@
       for (let i = 1; i < ds.length; i++) {
         const a = gs[i - 1], b = gs[i];
         if (a === b) continue;
-        const ia = GRADE_ORDER.indexOf(a), ib = GRADE_ORDER.indexOf(b);
-        marks[ds[i]] = `${(ia < 0 || ib < 0 || ib > ia) ? '▲' : '▼'}${b}부터`;
+        marks[ds[i]] = `→${b}`;   // 배지의 화살표와 같은 모양 (다순 결정 2026-11-27)
       }
       return { badge, marks };
     }
@@ -4603,7 +4601,7 @@
       // 개인 화면에 붙이면 "이 사람 때문"으로 읽힌다. 매장 단위인 📆 주간표에서 본다.
       // (저장 직전 확인 모달은 그대로 — 그때는 매장 전체가 어떻게 되는지가 판단 대상이다.)
       const wkEmp = STATE.employees.find(x => x.id === WK_EMP);
-      const wkGm = weekGradeInfo(wkEmp, ds);   // 주 중간 직급 변경 — 발효일 칸에 '▲Pro부터'
+      const wkGm = weekGradeInfo(wkEmp, ds);   // 주 중간 직급 변경 — 발효일 칸에 '→Pro'
       ds.forEach((d, i) => {
         // 소속이 아니던 날 — 근무를 넣을 수 없다. 넣게 두면 발령 뒤 옛 매장에 근무가 생긴다.
         if (!onRosterAt(wkEmp, d)) {
@@ -5097,7 +5095,7 @@
       h += `<div class="wk-wrap"><table class="wk"><tr><th class="dcol">직원</th>${ds.map((d, i) => `<th>${d.slice(5).replace('-', '/')}<br>${WDAYS[i]}${isOfficialHoliday(d) ? '<br><span class="hol-day">🎌 공휴일</span>' : ''}${rateBadge(d)}</th>`).join('')}</tr>`;
       emps.forEach(e => {
         // 직급 — 이름 위 줄, 가운데 정렬 (명단 외 ※ 직원은 직급 미상 → 생략)
-        //   지금 직급이 아니라 **그 주의 직급**. 주 중간에 바뀌면 'Crew→Pro' + 발효일 칸 '▲Pro부터'.
+        //   지금 직급이 아니라 **그 주의 직급**. 주 중간에 바뀌면 'Crew→Pro' + 발효일 칸 '→Pro'.
         const gi = weekGradeInfo(e, ds);
         h += `<tr><td class="dcol">${gi.badge ? `<span class="grade">${gi.badge}</span>` : ''}${e.name}</td>`;
         h += ds.map((d, i) => {
