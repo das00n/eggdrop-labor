@@ -2467,8 +2467,35 @@
       document.getElementById('date-modal').classList.remove('show');
     }
 
+    /** 그 날짜의 직급 — 서버 src/grade_history.grade_on 과 같은 규칙 (2026-11-27).
+     *  emp.gh = [[발효일, 이전, 이후], ...] (발효일 순) — 이력이 있는 사람만 서버가 싣는다.
+     *  ① 그 날짜보다 뒤에 발효하는 변경이 있으면 그중 첫 변경의 '이전'
+     *  ② 없고 마지막 변경이 아직 발효 전이면 그 '이후'  ③ 그 밖엔 지금 직급 */
+    function gradeAt(emp, dateStr) {
+      const cur = emp.grade0 || emp.grade;
+      const gh = emp.gh || [];
+      const later = gh.filter((x) => x[0] > dateStr);
+      if (later.length) return later[0][1] || cur;
+      if (gh.length && gh[gh.length - 1][0] > todayISO()) return gh[gh.length - 1][2];
+      return cur;
+    }
+    /** 보고 있는 날짜의 직급으로 명단을 맞춘다 — 발효일 전 날짜는 옛 직급(크루면 크루 시급).
+     *  지금 직급·시급은 grade0·rate0·base_rate0 에 둔다(직급 변경 ✎ 은 지금 직급 기준). */
+    function applyGradesAt(dateStr) {
+      (STATE.employees || []).forEach((e) => {
+        if (!e.gh || !e.gh.length) return;
+        if (e.grade0 === undefined) { e.grade0 = e.grade; e.rate0 = e.rate; e.base_rate0 = e.base_rate; }
+        const g = gradeAt(e, dateStr);
+        e.grade = g;
+        if (g === e.grade0) { e.rate = e.rate0; e.base_rate = e.base_rate0; }
+        else if (g === 'Crew') { e.rate = e.cr || e.rate0; e.base_rate = e.cb || null; }
+        else { e.rate = (STATE.rates || {})[g] || e.rate0; e.base_rate = null; }
+      });
+    }
+
     function pickDate(dateStr) {
       STATE.date = dateStr;
+      applyGradesAt(dateStr);
       // 선택 날짜의 prev 로드 → STATE.entries / supportEntries 재구성
       applyPrevForDate(dateStr);
       renderHeader();
@@ -3037,7 +3064,7 @@
             ${(!emp.isNew && !past && !emp.has_info)
               ? `<span class="info-need" onclick="openInfoModal('${emp.id}')" title="전화번호·생년월일 등록">📇 정보</span>`
               : ''}
-            ${(!emp.isNew && (emp.grade === 'Crew' ? STATE.is_operator : STATE.can_grade))
+            ${(!emp.isNew && ((emp.grade0 || emp.grade) === 'Crew' ? STATE.is_operator : STATE.can_grade))
               ? `<span class="emp-grade ${emp.grade}" style="cursor:pointer" onclick="openGradeModal('${emp.id}')" title="직급 변경">${emp.grade} ✎</span>`
               : `<span class="emp-grade ${emp.grade}">${emp.grade}</span>`}
             ${crewRateChip}
@@ -4058,19 +4085,19 @@
     function openGradeModal(empId) {
       const emp = STATE.employees.find(e => e.id === empId);
       if (!emp) return;
-      GC_CTX = { empId, name: emp.name, from: emp.grade, to: null };
-      const conv = emp.grade === 'Crew';   // 크루 → 정직원 전환 (운영자 전용, 2026-11-27)
+      const curG = emp.grade0 || emp.grade;   // 지금 직급 — 보고 있는 날짜의 직급이 아니다
+      GC_CTX = { empId, name: emp.name, from: curG, to: null };
+      const conv = curG === 'Crew';   // 크루 → 정직원 전환 (운영자 전용, 2026-11-27)
       document.getElementById('gc-title').textContent = conv
-        ? `${emp.name} 정직원 전환 (현재 Crew)` : `${emp.name} 직급 변경 (현재 ${emp.grade})`;
+        ? `${emp.name} 정직원 전환 (현재 Crew)` : `${emp.name} 직급 변경 (현재 ${curG})`;
       document.getElementById('gc-sub').textContent = conv
         ? '같은 직원 그대로 정직원으로 바꿉니다 — 삭제 후 새로 등록하지 마세요(근무기록이 지워집니다). 발효일부터의 근무가 정직원 일급으로 다시 계산됩니다.'
         : '정직원 간(SV/SM/AM/Pro) 변경만 가능합니다. 정직원 → 크루 전환은 지원하지 않습니다.';
       const di = document.getElementById('gc-date');
       di.value = _todayStr(); di.onchange = _gcUpdateWarn;
-      di.max = conv ? _todayStr() : '';   // 전환은 발효일이 지난 뒤(당일 포함)만 — 서버도 막는다
       const gp = document.getElementById('gc-grades');
       gp.innerHTML = '';
-      FT_GRADES.filter(g => g !== emp.grade).forEach(g => {
+      FT_GRADES.filter(g => g !== curG).forEach(g => {
         const chip = document.createElement('div');
         chip.className = 'grade-chip';
         chip.textContent = g;
@@ -4086,7 +4113,7 @@
       if (eff && eff < _todayStr()) {
         w.innerHTML = '⚠️ <b style="color:#e11d48">과거 발효일입니다.</b> ' + eff.slice(5).replace('-','/') + '부터 오늘까지의 인건비·연장 등 성과 지표가 새 직급으로 <b>재계산</b>됩니다. 신중히 확인하세요.';
       } else {
-        w.textContent = '이 날짜부터 저장되는 스케줄에 새 직급이 적용됩니다.';
+        w.textContent = '발효일 전 날짜는 지금 직급, 발효일부터는 새 직급으로 계산됩니다(이미 넣어 둔 스케줄 포함).';
       }
     }
     function closeGradeModal() {
@@ -4097,7 +4124,6 @@
       if (!GC_CTX || !GC_CTX.to) { say('새 직급을 선택해주세요'); return; }
       const eff = document.getElementById('gc-date').value;
       if (!eff) { say('발효일을 선택해주세요'); return; }
-      if (GC_CTX.from === 'Crew' && eff > _todayStr()) { say('정직원 전환은 발효일이 지난 뒤(당일 포함) 처리해주세요.'); return; }
       if (!tg) { say('텔레그램 환경에서만 변경할 수 있습니다.'); return; }
       const past = eff < _todayStr();
       const msg = past
